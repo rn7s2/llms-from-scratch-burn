@@ -1,0 +1,17 @@
+[package]
+name = "llms-from-scratch-burn"
+description = "Rust (burn) code for Build a LLM From Scratch by Sebastian Raschka"
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/rn7s2/llms-from-scratch-burn"
+authors = ["Ruiqi Lei <Rn7s2@outlook.com>"]
+keywords = ["machine-learning", "llms", "gpt"]
+categories = ["science"]
+license = "MIT"
+
+
+[dependencies]
+anyhow = "1.0.98"
+burn = { version = "0.17.1", features = ["dataset", "wgpu"] }
+regex = "1.11.1"
+tiktoken-rs = "0.7.0"

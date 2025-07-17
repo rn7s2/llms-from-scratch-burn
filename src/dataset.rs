@@ -39,7 +39,7 @@ impl<const M: usize> GPTDatasetV1<M> {
     }
 }
 
-type GPTDatasetV1Item<const M: usize> = ([u32; M], [u32; M]);
+pub type GPTDatasetV1Item<const M: usize> = ([u32; M], [u32; M]);
 
 impl<const M: usize> Dataset<GPTDatasetV1Item<M>> for GPTDatasetV1<M> {
     fn len(&self) -> usize {

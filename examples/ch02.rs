@@ -1,6 +1,7 @@
 use burn::backend::Wgpu;
-use burn::data::dataloader::Dataset;
-use burn::data::dataloader::batcher::Batcher;
+use burn::data::dataloader::{Dataset, batcher::Batcher};
+use burn::nn::{Embedding, EmbeddingConfig};
+use burn::prelude::*;
 use llms_from_scratch_burn::{
     dataset,
     tokenizer::{self, ITokenizer},
@@ -39,19 +40,36 @@ fn main() {
     println!();
 
     // 2.6. Dataset & Batcher
+    const MAX_LENGTH: usize = 4;
+    const STRIDE: usize = 4;
+    const VOCAB_SIZE: usize = 50257;
+    const OUT_DIM: usize = 256;
+
     let path = "assets/the-verdict.txt";
     let text = std::fs::read_to_string(path).unwrap();
 
-    let dataset = dataset::GPTDatasetV1::<4>::new(&text, &tokenizer, 4);
+    let dataset = dataset::GPTDatasetV1::<MAX_LENGTH>::new(&text, &tokenizer, STRIDE);
     let batcher = dataset::GPTDatasetV1Batcher::default();
 
     type Backend = Wgpu;
     let device = Default::default();
     let batch: dataset::GPTDatasetV1Batch<Backend> =
-        batcher.batch((0..3).map(|i| dataset.get(i).unwrap()).collect(), &device);
-    println!(
-        "{:?}, {:?}",
-        batch.input_ids.to_data().to_vec::<i32>(),
-        batch.target_ids.to_data().to_vec::<i32>()
-    );
+        batcher.batch((0..8).map(|i| dataset.get(i).unwrap()).collect(), &device);
+    println!("{}\n{}", batch.input_ids, batch.target_ids);
+
+    // 2.8. Encoding word positions
+    let token_embedding_layer: Embedding<Backend> =
+        EmbeddingConfig::new(VOCAB_SIZE, OUT_DIM).init(&device);
+    let token_embeddings = token_embedding_layer.forward(batch.input_ids);
+    println!("token embeddings: {}", token_embeddings.clone());
+
+    let pos_embedding_layer: Embedding<Backend> =
+        EmbeddingConfig::new(MAX_LENGTH, OUT_DIM).init(&device);
+    let pos_embeddings =
+        pos_embedding_layer.forward(Tensor::arange(0..MAX_LENGTH as i64, &device).unsqueeze());
+    println!("pos embeddings: {}", pos_embeddings.clone());
+
+    let input_embeddings =
+        token_embeddings.clone() + pos_embeddings.expand(token_embeddings.shape());
+    println!("input embeddings: {}", input_embeddings);
 }

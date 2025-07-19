@@ -1,4 +1,3 @@
-use burn::backend::Wgpu;
 use burn::data::dataloader::{Dataset, batcher::Batcher};
 use burn::nn::{Embedding, EmbeddingConfig};
 use burn::prelude::*;
@@ -6,6 +5,8 @@ use llms_from_scratch_burn::{
     dataset,
     tokenizer::{self, ITokenizer},
 };
+
+type Backend = burn::backend::Wgpu;
 
 fn main() {
     // 2.4. SimpleTokenizerV2
@@ -51,11 +52,12 @@ fn main() {
     let dataset = dataset::GPTDatasetV1::<MAX_LENGTH>::new(&text, &tokenizer, STRIDE);
     let batcher = dataset::GPTDatasetV1Batcher::default();
 
-    type Backend = Wgpu;
     let device = Default::default();
     let batch: dataset::GPTDatasetV1Batch<Backend> =
         batcher.batch((0..8).map(|i| dataset.get(i).unwrap()).collect(), &device);
     println!("{}\n{}", batch.input_ids, batch.target_ids);
+
+    println!();
 
     // 2.8. Encoding word positions
     let token_embedding_layer: Embedding<Backend> =

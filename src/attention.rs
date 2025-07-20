@@ -15,8 +15,6 @@ pub struct SelfAttentionV2<B: Backend> {
 
 impl<B: Backend> SelfAttentionV2<B> {
     pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
-        assert_eq!(D, 2);
-
         let inputs = Tensor::<B, D>::from(input);
         let queries = self.w_query.forward(inputs.clone());
         let keys = self.w_key.forward(inputs.clone());
@@ -24,8 +22,8 @@ impl<B: Backend> SelfAttentionV2<B> {
 
         let attn_scores = queries.matmul(keys.clone().transpose());
         let attn_weights = softmax(
-            attn_scores.div_scalar(keys.shape().dims[1].to_f64().sqrt()),
-            1,
+            attn_scores.div_scalar(keys.shape().dims[D - 1].to_f64().sqrt()),
+            D - 1,
         );
 
         attn_weights.matmul(values)
@@ -68,10 +66,10 @@ pub struct CausalAttention<B: Backend> {
 }
 
 impl<B: Backend> CausalAttention<B> {
-    pub fn forward(&self, input: Tensor<B, 3>) -> Tensor<B, 3> {
+    pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
         let [_b, num_tokens, _d_in] = input.shape().dims();
 
-        let inputs = Tensor::<B, 3>::from(input);
+        let inputs = Tensor::<B, D>::from(input);
         let queries = self.w_query.forward(inputs.clone());
         let keys = self.w_key.forward(inputs.clone());
         let values = self.w_key.forward(inputs);
@@ -85,7 +83,7 @@ impl<B: Backend> CausalAttention<B> {
             -f64::INFINITY,
         );
 
-        let attn_weights = softmax(masked.div_scalar(self.d_out.to_f64().sqrt()), 1);
+        let attn_weights = softmax(masked.div_scalar(self.d_out.to_f64().sqrt()), D - 1);
         let attn_weights = self.dropout.forward(attn_weights);
 
         attn_weights.matmul(values)
@@ -128,13 +126,13 @@ pub struct MultiHeadAttention<B: Backend> {
 }
 
 impl<B: Backend> MultiHeadAttention<B> {
-    pub fn forward(&self, input: Tensor<B, 3>) -> Tensor<B, 3> {
+    pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
         let outputs = self
             .heads
             .iter()
             .map(|h| h.forward(input.clone()))
             .collect();
-        Tensor::<B, 3>::cat(outputs, 2)
+        Tensor::<B, D>::cat(outputs, D - 1)
     }
 }
 

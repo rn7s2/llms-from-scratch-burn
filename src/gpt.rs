@@ -1,20 +1,24 @@
+use std::f64::consts::PI;
+
 use burn::config::Config;
-use burn::module::Module;
+use burn::module::{Module, Param};
 use burn::nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, Linear, LinearConfig};
 use burn::tensor::Int;
 use burn::tensor::{Tensor, backend::Backend};
 
+use crate::attention::{MultiHeadAttention, MultiHeadAttentionConfig};
+
 #[derive(Module, Debug)]
-pub struct DummyGPTModel<B: Backend> {
+pub struct GPTModel<B: Backend> {
     tok_emb: Embedding<B>,
     pos_emb: Embedding<B>,
     drop_emb: Dropout,
-    trf_blocks: Vec<DummyTransformerBlock<B>>,
-    final_norm: DummyLayerNorm<B>,
+    trf_blocks: Vec<TransformerBlock<B>>,
+    final_norm: LayerNorm<B>,
     out_head: Linear<B>,
 }
 
-impl<B: Backend> DummyGPTModel<B> {
+impl<B: Backend> GPTModel<B> {
     pub fn forward(&self, in_idx: Tensor<B, 2, Int>) -> Tensor<B, 3> {
         let device = in_idx.device();
         let dims = in_idx.dims();
@@ -36,7 +40,7 @@ impl<B: Backend> DummyGPTModel<B> {
 }
 
 #[derive(Config, Debug)]
-pub struct DummyGPTModelConfig {
+pub struct GPTModelConfig {
     pub vocab_size: usize,
     pub context_length: usize,
     pub emb_dim: usize,
@@ -46,20 +50,25 @@ pub struct DummyGPTModelConfig {
     pub qkv_bias: bool,
 }
 
-impl DummyGPTModelConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> DummyGPTModel<B> {
-        DummyGPTModel {
+impl GPTModelConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> GPTModel<B> {
+        GPTModel {
             tok_emb: EmbeddingConfig::new(self.vocab_size, self.emb_dim).init(device),
             pos_emb: EmbeddingConfig::new(self.vocab_size, self.emb_dim).init(device),
             drop_emb: DropoutConfig::new(self.drop_rate).init(),
             trf_blocks: (0..self.n_layers)
-                .map(|_| DummyTransformerBlock {
-                    _placeholder: LinearConfig::new(self.emb_dim, self.emb_dim).init(device),
+                .map(|_| {
+                    TransformerBlockConfig::new(
+                        self.context_length,
+                        self.emb_dim,
+                        self.n_heads,
+                        self.drop_rate,
+                        self.qkv_bias,
+                    )
+                    .init(device)
                 })
                 .collect(),
-            final_norm: DummyLayerNorm {
-                _placeholder: LinearConfig::new(self.emb_dim, self.emb_dim).init(device),
-            },
+            final_norm: LayerNormConfig::new(self.emb_dim).init(device),
             out_head: LinearConfig::new(self.emb_dim, self.vocab_size)
                 .with_bias(false)
                 .init(device),
@@ -68,23 +77,134 @@ impl DummyGPTModelConfig {
 }
 
 #[derive(Module, Debug)]
-pub struct DummyTransformerBlock<B: Backend> {
-    _placeholder: Linear<B>,
+pub struct TransformerBlock<B: Backend> {
+    attn: MultiHeadAttention<B>,
+    ff: FeedForward<B>,
+    norm1: LayerNorm<B>,
+    norm2: LayerNorm<B>,
+    dropout_shortcut: Dropout,
 }
 
-impl<B: Backend> DummyTransformerBlock<B> {
-    pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
-        input
+impl<B: Backend> TransformerBlock<B> {
+    pub fn forward<const D: usize>(&self, x: Tensor<B, D>) -> Tensor<B, D> {
+        let shortcut = x.clone();
+        let x = self.norm1.forward(x);
+        let x = self.attn.forward(x);
+        let x = self.dropout_shortcut.forward(x);
+        let x = x.add(shortcut);
+
+        let shortcut = x.clone();
+        let x = self.norm2.forward(x);
+        let x = self.ff.forward(x);
+        let x = self.dropout_shortcut.forward(x);
+        let x = x.add(shortcut);
+
+        x
+    }
+}
+
+#[derive(Config, Debug)]
+pub struct TransformerBlockConfig {
+    pub context_length: usize,
+    pub emb_dim: usize,
+    pub n_heads: usize,
+    pub drop_rate: f64,
+    pub qkv_bias: bool,
+}
+
+impl TransformerBlockConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> TransformerBlock<B> {
+        TransformerBlock {
+            attn: MultiHeadAttentionConfig::new().init(
+                self.emb_dim,
+                self.emb_dim,
+                self.context_length,
+                self.drop_rate,
+                self.n_heads,
+                self.qkv_bias,
+                device,
+            ),
+            ff: FeedForwardConfig::new(self.emb_dim).init(device),
+            norm1: LayerNormConfig::new(self.emb_dim).init(device),
+            norm2: LayerNormConfig::new(self.emb_dim).init(device),
+            dropout_shortcut: DropoutConfig::new(self.drop_rate).init(),
+        }
+    }
+}
+
+#[derive(Module, Clone, Debug)]
+pub struct GELU {}
+
+impl GELU {
+    pub fn forward<B: Backend, const D: usize>(&self, x: Tensor<B, D>) -> Tensor<B, D> {
+        x.clone().mul_scalar(0.5).mul(
+            x.clone()
+                .add(x.powf_scalar(3).mul_scalar(0.044715))
+                .mul_scalar((2.0 / PI).sqrt())
+                .tanh()
+                .add_scalar(1),
+        )
     }
 }
 
 #[derive(Module, Debug)]
-pub struct DummyLayerNorm<B: Backend> {
-    _placeholder: Linear<B>,
+pub struct FeedForward<B: Backend> {
+    linear1: Linear<B>,
+    gelu: GELU,
+    linear2: Linear<B>,
 }
 
-impl<B: Backend> DummyLayerNorm<B> {
+impl<B: Backend> FeedForward<B> {
     pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
-        input
+        let x = self.linear1.forward(input);
+        let x = self.gelu.forward(x);
+        self.linear2.forward(x)
+    }
+}
+
+#[derive(Config, Debug)]
+pub struct FeedForwardConfig {
+    pub emb_dim: usize,
+}
+
+impl FeedForwardConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> FeedForward<B> {
+        FeedForward {
+            linear1: LinearConfig::new(self.emb_dim, 4 * self.emb_dim).init(device),
+            gelu: GELU {},
+            linear2: LinearConfig::new(4 * self.emb_dim, self.emb_dim).init(device),
+        }
+    }
+}
+
+#[derive(Module, Debug)]
+pub struct LayerNorm<B: Backend> {
+    eps: f64,
+    scale: Param<Tensor<B, 1>>,
+    shift: Param<Tensor<B, 1>>,
+}
+
+impl<B: Backend> LayerNorm<B> {
+    pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
+        let (var, mean) = input.clone().var_mean_bias(D - 1);
+        let norm_input = input.sub(mean).div(var.add_scalar(self.eps).sqrt());
+        norm_input
+            .mul(self.scale.val().unsqueeze())
+            .add(self.shift.val().unsqueeze())
+    }
+}
+
+#[derive(Config, Debug)]
+pub struct LayerNormConfig {
+    pub emb_dim: usize,
+}
+
+impl LayerNormConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> LayerNorm<B> {
+        LayerNorm {
+            eps: 1e-5,
+            scale: Param::from_tensor(Tensor::ones([self.emb_dim], device)),
+            shift: Param::from_tensor(Tensor::zeros([self.emb_dim], device)),
+        }
     }
 }

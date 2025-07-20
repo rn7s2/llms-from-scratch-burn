@@ -12,6 +12,10 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1.0.98"
-burn = { version = "0.17.1", features = ["dataset", "wgpu"] }
+burn = { version = "0.17.1", default-features = false, features = ["dataset", "train"] }
 regex = "1.11.1"
 tiktoken-rs = "0.7.0"
+
+[features]
+default = ["burn/wgpu"]
+ndarray = ["burn/ndarray"]

@@ -2,11 +2,9 @@ use burn::data::dataloader::{Dataset, batcher::Batcher};
 use burn::nn::{Embedding, EmbeddingConfig};
 use burn::prelude::*;
 use llms_from_scratch_burn::{
-    dataset,
+    Backend, dataset,
     tokenizer::{self, ITokenizer},
 };
-
-type Backend = burn::backend::Wgpu;
 
 fn main() {
     // 2.4. SimpleTokenizerV2

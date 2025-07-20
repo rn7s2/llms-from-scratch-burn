@@ -1,6 +1,7 @@
 pub mod attention;
 mod backend;
 pub mod dataset;
+pub mod gpt;
 pub mod tokenizer;
 
 pub use backend::Backend;

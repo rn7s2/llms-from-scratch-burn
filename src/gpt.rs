@@ -4,6 +4,7 @@ use burn::config::Config;
 use burn::module::{Module, Param};
 use burn::nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, Linear, LinearConfig};
 use burn::tensor::Int;
+use burn::tensor::activation::softmax;
 use burn::tensor::{Tensor, backend::Backend};
 
 use crate::attention::{MultiHeadAttention, MultiHeadAttentionConfig};
@@ -209,4 +210,30 @@ impl LayerNormConfig {
             shift: Param::from_tensor(Tensor::zeros([self.emb_dim], device)),
         }
     }
+}
+
+pub fn generate_text_simple<B: Backend>(
+    model: &GPTModel<B>,
+    mut idx: Tensor<B, 2, Int>,
+    max_new_tokens: usize,
+    context_size: usize,
+) -> Tensor<B, 2, Int> {
+    for _ in 0..max_new_tokens {
+        let [n_batches, n_tokens] = idx.clone().dims();
+        let idx_cond = idx.clone().slice([
+            0..n_batches,
+            n_tokens.max(context_size) - context_size..n_tokens,
+        ]);
+
+        let logits = model.forward(idx_cond);
+        let last_logits = logits
+            .slice([0..n_batches, n_tokens - 1..n_tokens, 0..model.vocab_size])
+            .squeeze::<2>(1);
+
+        let probas = softmax(last_logits, 1);
+        let idx_next = probas.argmax(1);
+        idx = Tensor::cat(vec![idx, idx_next], 1);
+    }
+
+    idx
 }

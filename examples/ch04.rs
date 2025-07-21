@@ -1,11 +1,12 @@
 use burn::{
     module::Module,
-    tensor::{Distribution, Int, Tensor, activation::softmax},
+    tensor::{Distribution, Int, Tensor},
 };
 use llms_from_scratch_burn::{
     InferenceBackend as Backend,
     gpt::{
-        FeedForwardConfig, GELU, GPTModel, GPTModelConfig, LayerNormConfig, TransformerBlockConfig,
+        FeedForwardConfig, GELU, GPTModelConfig, LayerNormConfig, TransformerBlockConfig,
+        generate_text_simple,
     },
     tokenizer::{self, ITokenizer},
 };
@@ -91,30 +92,4 @@ fn main() {
     };
     let decoded_text = tokenizer.decode(&u32_ids).unwrap();
     println!("Output text: {}", decoded_text);
-}
-
-fn generate_text_simple(
-    model: &GPTModel<Backend>,
-    mut idx: Tensor<Backend, 2, Int>,
-    max_new_tokens: usize,
-    context_size: usize,
-) -> Tensor<Backend, 2, Int> {
-    for _ in 0..max_new_tokens {
-        let [n_batches, n_tokens] = idx.clone().dims();
-        let idx_cond = idx.clone().slice([
-            0..n_batches,
-            n_tokens.max(context_size) - context_size..n_tokens,
-        ]);
-
-        let logits = model.forward(idx_cond);
-        let last_logits = logits
-            .slice([0..n_batches, n_tokens - 1..n_tokens, 0..model.vocab_size])
-            .squeeze::<2>(1);
-
-        let probas = softmax(last_logits, 1);
-        let idx_next = probas.argmax(1);
-        idx = Tensor::cat(vec![idx, idx_next], 1);
-    }
-
-    idx
 }

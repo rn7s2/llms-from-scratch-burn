@@ -1,7 +1,12 @@
-use burn::tensor::{Distribution, Int, Tensor};
+use burn::{
+    module::Module,
+    tensor::{Distribution, Int, Tensor, activation::softmax},
+};
 use llms_from_scratch_burn::{
     Backend,
-    gpt::{FeedForwardConfig, GELU, GPTModelConfig, LayerNormConfig, TransformerBlockConfig},
+    gpt::{
+        FeedForwardConfig, GELU, GPTModel, GPTModelConfig, LayerNormConfig, TransformerBlockConfig,
+    },
     tokenizer::{self, ITokenizer},
 };
 
@@ -39,8 +44,6 @@ fn main() {
     println!("Feed Forward outputs:\n{}", ff.forward(x));
 
     // 4.5 connecting attention and linear layers in a transformer block
-    todo!("refine MultiHeadAttention, reduce dim_out.");
-
     let x = Tensor::<Backend, 3>::random([2, 4, 768], Distribution::Default, device);
     let block = TransformerBlockConfig::new(1024, 768, 12, 0.1, false).init::<Backend>(device);
     println!("Transformer Block outputs:\n{}", block.forward(x));
@@ -59,8 +62,54 @@ fn main() {
     let batch = Tensor::stack::<2>(batch, 0);
     println!("{}", batch);
 
-    let model = GPTModelConfig::new(50257, 1024, 768, 12, 12, 0.1, false).init::<Backend>(device);
+    let gpt_config_124m = GPTModelConfig::new(50257, 1024, 768, 12, 12, 0.1, false);
+    let model = gpt_config_124m.init::<Backend>(device);
 
     let logits = model.forward(batch);
     println!("{}", logits);
+
+    println!("Total number of parameters: {}", model.num_params());
+
+    // 4.7 generating text
+    println!("\n4.7 generating text");
+
+    let start_context = "Hello, I am";
+
+    let encoded = tokenizer.encode(start_context);
+    let encoded_tensor = Tensor::<Backend, 1, Int>::from(&encoded[..]).unsqueeze::<2>();
+    println!("encoded_tensor: {}", encoded_tensor);
+
+    let out = generate_text_simple(&model, encoded_tensor, 6, gpt_config_124m.context_length);
+    println!("Output: {}", out);
+
+    let ids = out.squeeze::<1>(0).to_data().to_vec::<i32>().unwrap();
+    let u32_ids = ids.iter().map(|id| *id as u32).collect::<Vec<_>>();
+    let decoded_text = tokenizer.decode(&u32_ids).unwrap();
+    println!("Output text: {}", decoded_text);
+}
+
+fn generate_text_simple(
+    model: &GPTModel<Backend>,
+    mut idx: Tensor<Backend, 2, Int>,
+    max_new_tokens: usize,
+    context_size: usize,
+) -> Tensor<Backend, 2, Int> {
+    for _ in 0..max_new_tokens {
+        let [n_batches, n_tokens] = idx.clone().dims();
+        let idx_cond = idx.clone().slice([
+            0..n_batches,
+            n_tokens.max(context_size) - context_size..n_tokens,
+        ]);
+
+        let logits = model.forward(idx_cond);
+        let last_logits = logits
+            .slice([0..n_batches, n_tokens - 1..n_tokens, 0..model.vocab_size])
+            .squeeze::<2>(1);
+
+        let probas = softmax(last_logits, 1);
+        let idx_next = probas.argmax(1);
+        idx = Tensor::cat(vec![idx, idx_next], 1);
+    }
+
+    idx
 }

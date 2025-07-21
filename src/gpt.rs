@@ -10,6 +10,7 @@ use crate::attention::{MultiHeadAttention, MultiHeadAttentionConfig};
 
 #[derive(Module, Debug)]
 pub struct GPTModel<B: Backend> {
+    pub vocab_size: usize,
     tok_emb: Embedding<B>,
     pos_emb: Embedding<B>,
     drop_emb: Dropout,
@@ -53,6 +54,7 @@ pub struct GPTModelConfig {
 impl GPTModelConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> GPTModel<B> {
         GPTModel {
+            vocab_size: self.vocab_size,
             tok_emb: EmbeddingConfig::new(self.vocab_size, self.emb_dim).init(device),
             pos_emb: EmbeddingConfig::new(self.vocab_size, self.emb_dim).init(device),
             drop_emb: DropoutConfig::new(self.drop_rate).init(),
@@ -86,7 +88,7 @@ pub struct TransformerBlock<B: Backend> {
 }
 
 impl<B: Backend> TransformerBlock<B> {
-    pub fn forward<const D: usize>(&self, x: Tensor<B, D>) -> Tensor<B, D> {
+    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let shortcut = x.clone();
         let x = self.norm1.forward(x);
         let x = self.attn.forward(x);
@@ -115,15 +117,15 @@ pub struct TransformerBlockConfig {
 impl TransformerBlockConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> TransformerBlock<B> {
         TransformerBlock {
-            attn: MultiHeadAttentionConfig::new().init(
+            attn: MultiHeadAttentionConfig::new(
                 self.emb_dim,
                 self.emb_dim,
                 self.context_length,
                 self.drop_rate,
                 self.n_heads,
                 self.qkv_bias,
-                device,
-            ),
+            )
+            .init(device),
             ff: FeedForwardConfig::new(self.emb_dim).init(device),
             norm1: LayerNormConfig::new(self.emb_dim).init(device),
             norm2: LayerNormConfig::new(self.emb_dim).init(device),

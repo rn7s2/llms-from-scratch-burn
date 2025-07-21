@@ -172,22 +172,20 @@ fn main() {
     // 3.6.1. stacking multiple single-head attention layers
     println!("3.6.1. stacking multiple single-head attention layers");
 
-    let mha = MultiHeadAttentionConfig::new().init::<Backend>(
-        DIM_IN,
-        DIM_OUT,
-        CONTEXT_LEN,
-        0.0,
-        2,
-        false,
-        &device,
-    );
+    let mha = MultiHeadAttentionConfig::new(DIM_IN, DIM_OUT, CONTEXT_LEN, 0.0, 2, false)
+        .init_naive::<Backend>(&device);
     println!("{}", mha);
 
-    let context_vecs = mha.forward(batch);
+    let context_vecs = mha.forward(batch.clone());
     println!("{}", context_vecs);
 
     // 3.6.2. implementing multi-head attention with weight splits
     println!("\n3.6.2. implementing multi-head attention with weight splits");
 
-    todo!("we will use stacking to implement multi-head attention for now")
+    let mha = MultiHeadAttentionConfig::new(DIM_IN, DIM_OUT, CONTEXT_LEN, 0.0, 2, false)
+        .init::<Backend>(&device);
+    println!("{}", mha);
+
+    let context_vecs = mha.forward(batch);
+    println!("{}", context_vecs);
 }

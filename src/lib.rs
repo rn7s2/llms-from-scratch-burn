@@ -4,7 +4,7 @@ pub mod dataset;
 pub mod gpt;
 pub mod tokenizer;
 
-pub use backend::Backend;
+pub use backend::{Backend, InferenceBackend};
 
 #[cfg(test)]
 mod tests {

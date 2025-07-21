@@ -2,7 +2,7 @@ use burn::data::dataloader::{Dataset, batcher::Batcher};
 use burn::nn::{Embedding, EmbeddingConfig};
 use burn::prelude::*;
 use llms_from_scratch_burn::{
-    Backend, dataset,
+    InferenceBackend as Backend, dataset,
     tokenizer::{self, ITokenizer},
 };
 

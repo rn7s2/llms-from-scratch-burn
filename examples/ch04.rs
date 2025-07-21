@@ -3,7 +3,7 @@ use burn::{
     tensor::{Distribution, Int, Tensor, activation::softmax},
 };
 use llms_from_scratch_burn::{
-    Backend,
+    InferenceBackend as Backend,
     gpt::{
         FeedForwardConfig, GELU, GPTModel, GPTModelConfig, LayerNormConfig, TransformerBlockConfig,
     },
@@ -82,8 +82,13 @@ fn main() {
     let out = generate_text_simple(&model, encoded_tensor, 6, gpt_config_124m.context_length);
     println!("Output: {}", out);
 
-    let ids = out.squeeze::<1>(0).to_data().to_vec::<i32>().unwrap();
-    let u32_ids = ids.iter().map(|id| *id as u32).collect::<Vec<_>>();
+    let out_ids = out.squeeze::<1>(0).to_data();
+    let u32_ids = if let Ok(i32_ids) = out_ids.to_vec::<i32>() {
+        i32_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
+    } else {
+        let i64_ids = out_ids.to_vec::<i64>().unwrap();
+        i64_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
+    };
     let decoded_text = tokenizer.decode(&u32_ids).unwrap();
     println!("Output text: {}", decoded_text);
 }

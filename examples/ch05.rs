@@ -1,4 +1,7 @@
-use burn::tensor::{Int, Tensor};
+use burn::{
+    nn::loss::CrossEntropyLossConfig,
+    tensor::{Int, Tensor, activation::softmax},
+};
 use llms_from_scratch_burn::{
     Backend,
     gpt::{GPTModelConfig, generate_text_simple},
@@ -29,7 +32,63 @@ fn main() {
     );
     println!("Output text:\n{}", token_ids_to_text(token_ids, &tokenizer));
 
-    todo!()
+    // 5.1.2 Calculating the text generation loss: cross-entropy and perplexity
+    println!("\n5.1.2 Calculating the text generation loss: cross-entropy and perplexity");
+
+    let inputs = Tensor::<Backend, 2, Int>::from([
+        [16833, 3626, 6100], // ["every effort moves",
+        [40, 1107, 588],     //  "I really like"]
+    ]);
+    let targets = Tensor::<Backend, 2, Int>::from([
+        [3626, 6100, 345],  // [" effort moves you",
+        [1107, 588, 11311], //  " really like chocolate"]
+    ]);
+
+    let logits = model.forward(inputs);
+    let probas = softmax(logits.clone(), 2);
+    println!("{}", probas);
+
+    let token_ids = probas.clone().argmax(2);
+    println!("Token IDs:\n{}", token_ids);
+
+    println!(
+        "Targets batch 1: {}",
+        token_ids_to_text(targets.clone().slice([0..1, 0..3]), &tokenizer)
+    );
+    println!(
+        "Outputs batch 1: {}",
+        token_ids_to_text(token_ids.slice([0..1]).squeeze(2), &tokenizer)
+    );
+
+    let target_probas = probas
+        .gather(2, targets.clone().unsqueeze_dim(2))
+        .squeeze::<2>(2);
+    println!("Target probabilities:\n{}", target_probas);
+
+    let log_probas = target_probas.flatten::<1>(0, 1).log();
+    println!("Log probabilities:\n{}", log_probas);
+
+    let avg_log_probas = log_probas.mean();
+    println!("Average log probability: {}", avg_log_probas.into_scalar());
+
+    // Logits have shape (batch_size, num_tokens, vocab_size)
+    println!("Logits shape: {:?}", logits.dims());
+
+    // Targets have shape (batch_size, num_tokens)
+    println!("Targets shape: {:?}", targets.dims());
+
+    let logits_flat = logits.flatten::<2>(0, 1);
+    let targets_flat = targets.flatten::<1>(0, 1);
+
+    println!("Flattened logits: {:?}", logits_flat.dims());
+    println!("Flattened targets: {:?}", targets_flat.dims());
+
+    let cross_entropy_loss = CrossEntropyLossConfig::new().init(device);
+    let loss = cross_entropy_loss
+        .forward(logits_flat, targets_flat)
+        .into_scalar();
+    println!("Loss: {}", loss);
+    println!("Perplexity: {}", loss.exp());
 }
 
 fn text_to_token_ids(text: &str, tokenizer: &tokenizer::BpeTokenizer) -> Tensor<Backend, 2, Int> {

@@ -14,7 +14,7 @@ use crate::{
     tokenizer,
 };
 
-pub const MAX_LENGTH: usize = 256;
+pub const MAX_LENGTH: usize = 1024;
 
 #[derive(Config)]
 pub struct TrainingConfig {

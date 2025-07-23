@@ -114,7 +114,7 @@ fn main() {
             GPTModelConfig::new(50257, MAX_LENGTH, 768, 12, 12, 0.1, false),
             optimizer,
         )
-        .with_num_epochs(2000)
+        .with_num_epochs(200)
         .with_restore_epoch(None),
         device,
     );

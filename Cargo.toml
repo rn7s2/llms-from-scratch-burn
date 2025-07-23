@@ -12,7 +12,7 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1.0.98"
-burn = { version = "0.18.0", default-features = false, features = ["dataset", "train", "wgpu"] }
+burn = { version = "0.17.1", default-features = false, features = ["dataset", "train", "tui", "wgpu"] }
 lazy_static = "1.5.0"
 regex = "1.11.1"
 tiktoken-rs = "0.7.0"

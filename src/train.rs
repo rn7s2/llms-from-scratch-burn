@@ -14,7 +14,7 @@ use crate::{
     tokenizer,
 };
 
-pub const MAX_LENGTH: usize = 1024;
+pub const MAX_LENGTH: usize = 256;
 
 #[derive(Config)]
 pub struct TrainingConfig {
@@ -24,7 +24,7 @@ pub struct TrainingConfig {
     pub optimizer: AdamConfig,
     #[config(default = 10)]
     pub num_epochs: usize,
-    #[config(default = 64)]
+    #[config(default = 6)]
     pub batch_size: usize,
     #[config(default = 1)]
     pub num_workers: usize,

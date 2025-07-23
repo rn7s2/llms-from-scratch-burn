@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 
 use anyhow::{Result, anyhow};
 use regex::Regex;
@@ -117,9 +117,7 @@ impl BpeTokenizer {
 
 impl ITokenizer for BpeTokenizer {
     fn encode(&self, text: &str) -> Vec<u32> {
-        let allowed_specials = HashSet::from(["<|endoftext|>"]);
-        let (tokens, _) = self.bpe.encode(text, &allowed_specials);
-        tokens
+        self.bpe.encode_with_special_tokens(text)
     }
 
     fn decode(&self, ids: &[u32]) -> Result<String> {

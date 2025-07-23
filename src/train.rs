@@ -1,6 +1,6 @@
 use burn::{
     config::Config,
-    data::dataloader::DataLoaderBuilder,
+    data::{dataloader::DataLoaderBuilder, dataset::Dataset},
     module::Module,
     optim::AdamConfig,
     record::CompactRecorder,
@@ -14,6 +14,8 @@ use crate::{
     tokenizer,
 };
 
+pub const MAX_LENGTH: usize = 256;
+
 #[derive(Config)]
 pub struct TrainingConfig {
     pub model: GPTModelConfig,
@@ -24,11 +26,11 @@ pub struct TrainingConfig {
     pub num_epochs: usize,
     #[config(default = 64)]
     pub batch_size: usize,
-    #[config(default = 0)]
+    #[config(default = 1)]
     pub num_workers: usize,
     #[config(default = 42)]
     pub seed: u64,
-    #[config(default = 1.0e-4)]
+    #[config(default = 0.0004)]
     pub learning_rate: f64,
 }
 
@@ -54,8 +56,11 @@ pub fn train<B: AutodiffBackend>(
     let batcher = GPTDatasetV1Batcher::default();
 
     let tokenizer = tokenizer::BpeTokenizer::new();
-    let (train, valid) =
-        GPTDatasetV1::<1024>::new(text, &tokenizer, 1024).split_train_valid(config.valid_ratio);
+    let (train, valid) = GPTDatasetV1::<MAX_LENGTH>::new(text, &tokenizer, MAX_LENGTH)
+        .split_train_valid(config.valid_ratio);
+
+    println!("Train dataset size: {}", train.len());
+    println!("Valid dataset size: {}", valid.len());
 
     let dataloader_train = DataLoaderBuilder::new(batcher.clone())
         .batch_size(config.batch_size)

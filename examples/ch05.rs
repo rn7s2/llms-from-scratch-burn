@@ -1,10 +1,10 @@
 use burn::{
     nn::loss::CrossEntropyLossConfig,
-    optim::AdamConfig,
+    optim::{AdamConfig, decay::WeightDecayConfig},
     tensor::{Int, Tensor, activation::softmax},
 };
 use llms_from_scratch_burn::{
-    TrainBackend, TrainingConfig,
+    MAX_LENGTH, TrainBackend, TrainingConfig,
     gpt::{GPTModelConfig, generate_text_simple, text_to_token_ids, token_ids_to_text},
     tokenizer::{self, ITokenizer},
 };
@@ -103,11 +103,14 @@ fn main() {
     println!("Characters: {}", total_characters);
     println!("Tokens: {}", total_tokens);
 
-    let optimizer = AdamConfig::new();
+    let optimizer = AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(0.1)));
     llms_from_scratch_burn::train::<TrainBackend>(
         &text,
         "artifacts",
-        TrainingConfig::new(gpt_config_124m, optimizer),
+        TrainingConfig::new(
+            GPTModelConfig::new(50257, MAX_LENGTH, 768, 12, 12, 0.1, false),
+            optimizer,
+        ),
         device,
     );
 }

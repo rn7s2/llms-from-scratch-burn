@@ -11,6 +11,7 @@ use burn::tensor::backend::AutodiffBackend;
 use burn::tensor::{Tensor, backend::Backend};
 use burn::train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep};
 
+use crate::MAX_LENGTH;
 use crate::attention::{MultiHeadAttention, MultiHeadAttentionConfig};
 use crate::dataset::GPTDatasetV1Batch;
 use crate::tokenizer::{self, ITokenizer};
@@ -86,8 +87,8 @@ impl<B: AutodiffBackend> TrainStep<GPTDatasetV1Batch<B>, ClassificationOutput<B>
         let token_ids = generate_text_simple(
             &new_self,
             text_to_token_ids(start_context, &tokenizer),
-            6,
-            1024,
+            50,
+            MAX_LENGTH,
         );
         println!(
             "optimize step output preview: {}",

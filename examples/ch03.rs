@@ -3,7 +3,7 @@ use burn::{
     tensor::{Bool, Distribution, Tensor, activation::softmax},
 };
 use llms_from_scratch_burn::{
-    Backend,
+    TrainBackend,
     attention::{CausalAttentionConfig, MultiHeadAttentionConfig, SelfAttentionV2Config},
 };
 
@@ -18,7 +18,7 @@ fn main() {
         [0.77, 0.25, 0.10], // one      (x^5)
         [0.05, 0.80, 0.55], // step     (x^6)
     ];
-    let inputs = Tensor::<Backend, 2>::from(INPUTS);
+    let inputs = Tensor::<TrainBackend, 2>::from(INPUTS);
 
     // 3.3. attending to different parts of the input with self-attention
     println!("3.3. attending to different parts of the input with self-attention");
@@ -26,7 +26,7 @@ fn main() {
     // 3.3.1. attention weights for the second token (a single query)
     println!("\n3.3.1. attention weights for the second token (a single query)");
 
-    let query_2 = Tensor::<Backend, 1>::from_data(INPUTS[1], &device)
+    let query_2 = Tensor::<TrainBackend, 1>::from_data(INPUTS[1], &device)
         .unsqueeze::<2>()
         .transpose();
     println!("{}", query_2);
@@ -70,11 +70,11 @@ fn main() {
     println!("\n3.4.1. computing the attention weights step by step");
 
     let distribution = Distribution::Uniform(0.0, 1.0); // Any random value between 0.0 and 1.0
-    let w_query = Tensor::<Backend, 2>::random([DIM_IN, DIM_OUT], distribution, &device);
-    let w_key = Tensor::<Backend, 2>::random([DIM_IN, DIM_OUT], distribution, &device);
-    let w_value = Tensor::<Backend, 2>::random([DIM_IN, DIM_OUT], distribution, &device);
+    let w_query = Tensor::<TrainBackend, 2>::random([DIM_IN, DIM_OUT], distribution, &device);
+    let w_key = Tensor::<TrainBackend, 2>::random([DIM_IN, DIM_OUT], distribution, &device);
+    let w_value = Tensor::<TrainBackend, 2>::random([DIM_IN, DIM_OUT], distribution, &device);
 
-    let query_2 = Tensor::<Backend, 1>::from_data(INPUTS[1], &device)
+    let query_2 = Tensor::<TrainBackend, 1>::from_data(INPUTS[1], &device)
         .unsqueeze::<2>()
         .matmul(w_query.clone());
     println!("{}", query_2);
@@ -96,7 +96,7 @@ fn main() {
     // 3.4.2. implementing a compact SelfAttention class
     println!("\n3.4.2. implementing a compact SelfAttention class");
 
-    let model = SelfAttentionV2Config::new().init::<Backend>(DIM_IN, DIM_OUT, false, &device);
+    let model = SelfAttentionV2Config::new().init::<TrainBackend>(DIM_IN, DIM_OUT, false, &device);
     println!("{}", model);
 
     let sa_v2 = model.forward(inputs.clone());
@@ -118,7 +118,7 @@ fn main() {
 
     const CONTEXT_LEN: usize = INPUTS.len();
     let mask_simple =
-        Tensor::<Backend, 2>::tril(Tensor::ones([CONTEXT_LEN, CONTEXT_LEN], &device), 0);
+        Tensor::<TrainBackend, 2>::tril(Tensor::ones([CONTEXT_LEN, CONTEXT_LEN], &device), 0);
     println!("Mask: {}", mask_simple);
 
     let masked_simple = attn_weights * mask_simple.clone();
@@ -131,7 +131,7 @@ fn main() {
         masked_simple_norm
     );
 
-    let mask = Tensor::<Backend, 2, Bool>::tril_mask([CONTEXT_LEN, CONTEXT_LEN], 0, &device);
+    let mask = Tensor::<TrainBackend, 2, Bool>::tril_mask([CONTEXT_LEN, CONTEXT_LEN], 0, &device);
     println!("Mask: {}", mask);
     let masked = attn_scores.mask_fill(mask, -f64::INFINITY);
     println!("Masked attention scores: {}", masked);
@@ -153,7 +153,7 @@ fn main() {
     let batch = Tensor::stack::<3>(vec![inputs.clone(), inputs.clone()], 0);
     println!("{}", batch);
 
-    let model = CausalAttentionConfig::new().init::<Backend>(
+    let model = CausalAttentionConfig::new().init::<TrainBackend>(
         DIM_IN,
         DIM_OUT,
         CONTEXT_LEN,
@@ -173,7 +173,7 @@ fn main() {
     println!("3.6.1. stacking multiple single-head attention layers");
 
     let mha = MultiHeadAttentionConfig::new(DIM_IN, DIM_OUT, CONTEXT_LEN, 0.0, 2, false)
-        .init_naive::<Backend>(&device);
+        .init_naive::<TrainBackend>(&device);
     println!("{}", mha);
 
     let context_vecs = mha.forward(batch.clone());
@@ -183,7 +183,7 @@ fn main() {
     println!("\n3.6.2. implementing multi-head attention with weight splits");
 
     let mha = MultiHeadAttentionConfig::new(DIM_IN, DIM_OUT, CONTEXT_LEN, 0.0, 2, false)
-        .init::<Backend>(&device);
+        .init::<TrainBackend>(&device);
     println!("{}", mha);
 
     let context_vecs = mha.forward(batch);

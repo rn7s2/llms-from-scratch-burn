@@ -3,7 +3,7 @@ use burn::{
     tensor::{Distribution, Int, Tensor},
 };
 use llms_from_scratch_burn::{
-    InferenceBackend as Backend,
+    Backend,
     gpt::{
         FeedForwardConfig, GELU, GPTModelConfig, LayerNormConfig, TransformerBlockConfig,
         generate_text_simple,

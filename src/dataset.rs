@@ -37,6 +37,19 @@ impl<const M: usize> GPTDatasetV1<M> {
             target_ids,
         }
     }
+
+    pub fn split_train_valid(&self, valid_ratio: f64) -> (Self, Self) {
+        let valid_split = (self.input_ids.len() as f64 * valid_ratio) as usize;
+        let train = Self {
+            input_ids: self.input_ids[valid_split..].to_vec(),
+            target_ids: self.target_ids[valid_split..].to_vec(),
+        };
+        let valid = Self {
+            input_ids: self.input_ids[..valid_split].to_vec(),
+            target_ids: self.target_ids[..valid_split].to_vec(),
+        };
+        (train, valid)
+    }
 }
 
 pub type GPTDatasetV1Item<const M: usize> = ([u32; M], [u32; M]);

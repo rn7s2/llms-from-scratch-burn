@@ -1,13 +1,19 @@
 use std::f64::consts::PI;
 
 use burn::config::Config;
-use burn::module::{Module, Param};
+use burn::module::{AutodiffModule, Module, Param};
+use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, Linear, LinearConfig};
+use burn::optim::Optimizer;
 use burn::tensor::Int;
 use burn::tensor::activation::softmax;
+use burn::tensor::backend::AutodiffBackend;
 use burn::tensor::{Tensor, backend::Backend};
+use burn::train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep};
 
 use crate::attention::{MultiHeadAttention, MultiHeadAttentionConfig};
+use crate::dataset::GPTDatasetV1Batch;
+use crate::tokenizer::{self, ITokenizer};
 
 #[derive(Module, Debug)]
 pub struct GPTModel<B: Backend> {
@@ -38,6 +44,63 @@ impl<B: Backend> GPTModel<B> {
         }
         let x = self.final_norm.forward(x);
         self.out_head.forward(x)
+    }
+
+    fn forward_train(
+        &self,
+        input_ids: Tensor<B, 2, Int>,
+        target_ids: Tensor<B, 2, Int>,
+    ) -> ClassificationOutput<B> {
+        let logits = self.forward(input_ids);
+        let targets = target_ids;
+
+        let device = &logits.device();
+
+        let logits_flat = logits.flatten::<2>(0, 1);
+        let targets_flat = targets.flatten::<1>(0, 1);
+
+        let loss = CrossEntropyLossConfig::new()
+            .init(device)
+            .forward(logits_flat.clone(), targets_flat.clone());
+        ClassificationOutput::new(loss, logits_flat, targets_flat)
+    }
+}
+
+impl<B: AutodiffBackend> TrainStep<GPTDatasetV1Batch<B>, ClassificationOutput<B>> for GPTModel<B> {
+    fn step(&self, batch: GPTDatasetV1Batch<B>) -> TrainOutput<ClassificationOutput<B>> {
+        let item = self.forward_train(batch.input_ids, batch.target_ids);
+
+        TrainOutput::new(self, item.loss.backward(), item)
+    }
+
+    fn optimize<B1, O>(self, optim: &mut O, lr: f64, grads: burn::optim::GradientsParams) -> Self
+    where
+        B1: AutodiffBackend,
+        O: Optimizer<Self, B1>,
+        Self: AutodiffModule<B1>,
+    {
+        let new_self = optim.step(lr, self, grads);
+
+        let start_context = "Every effort moves you";
+        let tokenizer = tokenizer::BpeTokenizer::new();
+        let token_ids = generate_text_simple(
+            &new_self,
+            text_to_token_ids(start_context, &tokenizer),
+            6,
+            1024,
+        );
+        println!(
+            "optimize step output preview: {}",
+            token_ids_to_text(token_ids, &tokenizer)
+        );
+
+        new_self
+    }
+}
+
+impl<B: Backend> ValidStep<GPTDatasetV1Batch<B>, ClassificationOutput<B>> for GPTModel<B> {
+    fn step(&self, batch: GPTDatasetV1Batch<B>) -> ClassificationOutput<B> {
+        self.forward_train(batch.input_ids, batch.target_ids)
     }
 }
 
@@ -236,4 +299,26 @@ pub fn generate_text_simple<B: Backend>(
     }
 
     idx
+}
+
+pub fn text_to_token_ids<B: Backend>(
+    text: &str,
+    tokenizer: &tokenizer::BpeTokenizer,
+) -> Tensor<B, 2, Int> {
+    let encoded = tokenizer.encode(text);
+    Tensor::<B, 1, Int>::from(&encoded[..]).unsqueeze()
+}
+
+pub fn token_ids_to_text<B: Backend>(
+    token_ids: Tensor<B, 2, Int>,
+    tokenizer: &tokenizer::BpeTokenizer,
+) -> String {
+    let out_ids = token_ids.squeeze::<1>(0).to_data();
+    let u32_ids = if let Ok(i32_ids) = out_ids.to_vec::<i32>() {
+        i32_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
+    } else {
+        let i64_ids = out_ids.to_vec::<i64>().unwrap();
+        i64_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
+    };
+    tokenizer.decode(&u32_ids).unwrap()
 }

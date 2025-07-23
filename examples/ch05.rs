@@ -97,7 +97,7 @@ fn main() {
     // 5.1.3 Calculating the training and validation set losses
     println!("\n5.1.3 Calculating the training and validation set losses");
 
-    let path = "assets/the-verdict.txt";
+    let path = "assets/big.txt";
     let text = std::fs::read_to_string(path).unwrap();
 
     let total_characters = text.len();

@@ -31,7 +31,10 @@ fn main() {
         6,
         gpt_config_124m.context_length,
     );
-    println!("Output text:\n{}", token_ids_to_text(token_ids, &tokenizer));
+    println!(
+        "Output text:\n{:?}",
+        token_ids_to_text(token_ids, &tokenizer)
+    );
 
     // 5.1.2 Calculating the text generation loss: cross-entropy and perplexity
     println!("\n5.1.2 Calculating the text generation loss: cross-entropy and perplexity");
@@ -53,11 +56,11 @@ fn main() {
     println!("Token IDs:\n{}", token_ids);
 
     println!(
-        "Targets batch 1: {}",
+        "Targets batch 1: {:?}",
         token_ids_to_text(targets.clone().slice([0..1, 0..3]), &tokenizer)
     );
     println!(
-        "Outputs batch 1: {}",
+        "Outputs batch 1: {:?}",
         token_ids_to_text(token_ids.slice([0..1]).squeeze(2), &tokenizer)
     );
 

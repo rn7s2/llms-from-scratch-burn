@@ -1,5 +1,6 @@
 use std::f64::consts::PI;
 
+use anyhow::Result;
 use burn::config::Config;
 use burn::module::{AutodiffModule, Module, Param};
 use burn::nn::loss::CrossEntropyLossConfig;
@@ -91,7 +92,7 @@ impl<B: AutodiffBackend> TrainStep<GPTDatasetV1Batch<B>, ClassificationOutput<B>
             MAX_LENGTH,
         );
         println!(
-            "optimize step output preview: {}",
+            "optimize step output preview: {:?}",
             token_ids_to_text(token_ids, &tokenizer)
         );
 
@@ -313,7 +314,7 @@ pub fn text_to_token_ids<B: Backend>(
 pub fn token_ids_to_text<B: Backend>(
     token_ids: Tensor<B, 2, Int>,
     tokenizer: &tokenizer::BpeTokenizer,
-) -> String {
+) -> Result<String> {
     let out_ids = token_ids.squeeze::<1>(0).to_data();
     let u32_ids = if let Ok(i32_ids) = out_ids.to_vec::<i32>() {
         i32_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
@@ -321,5 +322,5 @@ pub fn token_ids_to_text<B: Backend>(
         let i64_ids = out_ids.to_vec::<i64>().unwrap();
         i64_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
     };
-    tokenizer.decode(&u32_ids).unwrap()
+    tokenizer.decode(&u32_ids)
 }

@@ -2,20 +2,24 @@ use std::f64::consts::PI;
 
 use anyhow::Result;
 use burn::config::Config;
-use burn::module::{AutodiffModule, Module, Param};
+use burn::module::{Module, Param};
 use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, Linear, LinearConfig};
-use burn::optim::Optimizer;
 use burn::tensor::Int;
 use burn::tensor::activation::softmax;
 use burn::tensor::backend::AutodiffBackend;
 use burn::tensor::{Tensor, backend::Backend};
 use burn::train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep};
+use lazy_static::lazy_static;
 
 use crate::MAX_LENGTH;
 use crate::attention::{MultiHeadAttention, MultiHeadAttentionConfig};
 use crate::dataset::GPTDatasetV1Batch;
 use crate::tokenizer::{self, ITokenizer};
+
+lazy_static! {
+    static ref TOKENIZER: tokenizer::BpeTokenizer = tokenizer::BpeTokenizer::new();
+}
 
 #[derive(Module, Debug)]
 pub struct GPTModel<B: Backend> {
@@ -74,34 +78,22 @@ impl<B: AutodiffBackend> TrainStep<GPTDatasetV1Batch<B>, ClassificationOutput<B>
 
         TrainOutput::new(self, item.loss.backward(), item)
     }
-
-    fn optimize<B1, O>(self, optim: &mut O, lr: f64, grads: burn::optim::GradientsParams) -> Self
-    where
-        B1: AutodiffBackend,
-        O: Optimizer<Self, B1>,
-        Self: AutodiffModule<B1>,
-    {
-        let new_self = optim.step(lr, self, grads);
-
-        let start_context = "Every effort moves you";
-        let tokenizer = tokenizer::BpeTokenizer::new();
-        let token_ids = generate_text_simple(
-            &new_self,
-            text_to_token_ids(start_context, &tokenizer),
-            50,
-            MAX_LENGTH,
-        );
-        println!(
-            "optimize step output preview: {:?}",
-            token_ids_to_text(token_ids, &tokenizer)
-        );
-
-        new_self
-    }
 }
 
 impl<B: Backend> ValidStep<GPTDatasetV1Batch<B>, ClassificationOutput<B>> for GPTModel<B> {
     fn step(&self, batch: GPTDatasetV1Batch<B>) -> ClassificationOutput<B> {
+        let start_context = "Every effort moves you";
+        let token_ids = generate_text_simple(
+            self,
+            text_to_token_ids(start_context, &TOKENIZER),
+            50,
+            MAX_LENGTH,
+        );
+        println!(
+            "Output preview: {:?}",
+            token_ids_to_text(token_ids, &TOKENIZER)
+        );
+
         self.forward_train(batch.input_ids, batch.target_ids)
     }
 }

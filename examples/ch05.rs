@@ -143,16 +143,18 @@ fn main() {
         gpt_config_124m.init_pretrained::<Backend>("assets/gpt2-small-124M.safetensors", &device);
 
     let start_context = "Every effort moves you";
-    let token_ids = generate_text(
-        &model,
-        text_to_token_ids(start_context, &TOKENIZER),
-        25,
-        gpt_config_124m.context_length,
-        1.5,
-        Some(50),
-    );
-    println!(
-        "Output preview: {:?}",
-        token_ids_to_text(token_ids, &TOKENIZER)
-    );
+    for _ in 0..5 {
+        let token_ids = generate_text(
+            &model,
+            text_to_token_ids(start_context, &TOKENIZER),
+            25,
+            gpt_config_124m.context_length,
+            1.5,
+            Some(50),
+        );
+        println!(
+            "Output texts: {:?}",
+            token_ids_to_text(token_ids, &TOKENIZER)
+        );
+    }
 }

@@ -140,37 +140,49 @@ impl GPTModelConfig {
         let buffer = std::fs::read(pth_path).unwrap();
         let tensors = SafeTensors::deserialize(&buffer).expect("Failed to deserialize tensors");
 
-        fn tensor_data(tensors: &SafeTensors<'_>, name: &str) -> TensorData {
+        fn param_tensor<B: Backend, const D: usize>(
+            tensors: &SafeTensors<'_>,
+            name: &str,
+            device: &B::Device,
+        ) -> Param<Tensor<B, D>> {
             let tensor = tensors.tensor(name).unwrap();
             let bytes = tensor.data();
-            let mut shape = tensor.shape().to_vec();
+            let shape = tensor.shape();
             let dtype = tensor.dtype();
+            let need_transpose = name.ends_with(".weight") && !name.contains("_emb");
 
-            if name.ends_with(".weight") && !name.contains("_emb") {
-                shape.reverse();
-            }
+            let data = Tensor::<B, D>::from_data(
+                TensorData::from_bytes(
+                    bytes.to_vec(),
+                    shape,
+                    match dtype {
+                        safetensors::Dtype::BOOL => DType::Bool,
+                        safetensors::Dtype::F32 => DType::F32,
+                        safetensors::Dtype::F64 => DType::F64,
+                        safetensors::Dtype::I32 => DType::I32,
+                        safetensors::Dtype::I64 => DType::I64,
+                        _ => panic!("Unsupported dtype"),
+                    },
+                ),
+                device,
+            );
 
-            println!("load tensor: {} -> {:?}", name, shape);
+            let param = Param::from_tensor(if need_transpose {
+                data.transpose()
+            } else {
+                data
+            });
 
-            TensorData::from_bytes(
-                bytes.to_vec(),
-                shape,
-                match dtype {
-                    safetensors::Dtype::BOOL => DType::Bool,
-                    safetensors::Dtype::F32 => DType::F32,
-                    safetensors::Dtype::F64 => DType::F64,
-                    safetensors::Dtype::I32 => DType::I32,
-                    safetensors::Dtype::I64 => DType::I64,
-                    _ => panic!("Unsupported dtype"),
-                },
-            )
+            println!("loaded {} with shape {:?}", name, param.dims());
+
+            param
         }
 
         let tok_emb = Embedding {
-            weight: Param::from_data(tensor_data(&tensors, "tok_emb.weight"), device),
+            weight: param_tensor(&tensors, "tok_emb.weight", device),
         };
         let pos_emb = Embedding {
-            weight: Param::from_data(tensor_data(&tensors, "pos_emb.weight"), device),
+            weight: param_tensor(&tensors, "pos_emb.weight", device),
         };
         let drop_emb = DropoutConfig::new(self.drop_rate).init();
 
@@ -181,42 +193,50 @@ impl GPTModelConfig {
                     num_heads: self.n_heads,
                     head_dim: self.emb_dim / self.n_heads,
                     w_query: Linear {
-                        weight: Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_query.weight", i)),
+                        weight: param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.att.W_query.weight", i),
                             device,
                         ),
-                        bias: Some(Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_query.bias", i)),
+                        bias: Some(param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.att.W_query.bias", i),
                             device,
                         )),
                     },
                     w_key: Linear {
-                        weight: Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_key.weight", i)),
+                        weight: param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.att.W_key.weight", i),
                             device,
                         ),
-                        bias: Some(Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_key.bias", i)),
+                        bias: Some(param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.att.W_key.bias", i),
                             device,
                         )),
                     },
                     w_value: Linear {
-                        weight: Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_value.weight", i)),
+                        weight: param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.att.W_value.weight", i),
                             device,
                         ),
-                        bias: Some(Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_value.bias", i)),
+                        bias: Some(param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.att.W_value.bias", i),
                             device,
                         )),
                     },
                     out_proj: Linear {
-                        weight: Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.att.out_proj.weight", i)),
+                        weight: param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.att.out_proj.weight", i),
                             device,
                         ),
-                        bias: Some(Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.att.out_proj.bias", i)),
+                        bias: Some(param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.att.out_proj.bias", i),
                             device,
                         )),
                     },
@@ -229,48 +249,40 @@ impl GPTModelConfig {
                 };
                 let ff = FeedForward {
                     linear1: Linear {
-                        weight: Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.ff.layers.0.weight", i)),
+                        weight: param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.ff.layers.0.weight", i),
                             device,
                         ),
-                        bias: Some(Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.ff.layers.0.bias", i)),
+                        bias: Some(param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.ff.layers.0.bias", i),
                             device,
                         )),
                     },
                     gelu: GELU {},
                     linear2: Linear {
-                        weight: Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.ff.layers.2.weight", i)),
+                        weight: param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.ff.layers.2.weight", i),
                             device,
                         ),
-                        bias: Some(Param::from_data(
-                            tensor_data(&tensors, &format!("trf_blocks.{}.ff.layers.2.bias", i)),
+                        bias: Some(param_tensor(
+                            &tensors,
+                            &format!("trf_blocks.{}.ff.layers.2.bias", i),
                             device,
                         )),
                     },
                 };
                 let norm1 = LayerNorm {
                     eps: 1e-5,
-                    scale: Param::from_data(
-                        tensor_data(&tensors, &format!("trf_blocks.{}.norm1.scale", i)),
-                        device,
-                    ),
-                    shift: Param::from_data(
-                        tensor_data(&tensors, &format!("trf_blocks.{}.norm1.shift", i)),
-                        device,
-                    ),
+                    scale: param_tensor(&tensors, &format!("trf_blocks.{}.norm1.scale", i), device),
+                    shift: param_tensor(&tensors, &format!("trf_blocks.{}.norm1.shift", i), device),
                 };
                 let norm2 = LayerNorm {
                     eps: 1e-5,
-                    scale: Param::from_data(
-                        tensor_data(&tensors, &format!("trf_blocks.{}.norm2.scale", i)),
-                        device,
-                    ),
-                    shift: Param::from_data(
-                        tensor_data(&tensors, &format!("trf_blocks.{}.norm2.shift", i)),
-                        device,
-                    ),
+                    scale: param_tensor(&tensors, &format!("trf_blocks.{}.norm2.scale", i), device),
+                    shift: param_tensor(&tensors, &format!("trf_blocks.{}.norm2.shift", i), device),
                 };
                 let dropout_shortcut = DropoutConfig::new(self.drop_rate).init();
 
@@ -286,11 +298,11 @@ impl GPTModelConfig {
 
         let final_norm = LayerNorm {
             eps: 1e-5,
-            scale: Param::from_data(tensor_data(&tensors, "final_norm.scale"), device),
-            shift: Param::from_data(tensor_data(&tensors, "final_norm.shift"), device),
+            scale: param_tensor(&tensors, "final_norm.scale", device),
+            shift: param_tensor(&tensors, "final_norm.shift", device),
         };
         let out_head = Linear {
-            weight: Param::from_data(tensor_data(&tensors, "out_head.weight"), device),
+            weight: param_tensor(&tensors, "out_head.weight", device),
             bias: None,
         };
 

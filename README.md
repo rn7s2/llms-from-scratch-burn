@@ -10,7 +10,7 @@ Burn & Wgpu should be compatible with any operating system and will use the GPU.
 
 ## Usage
 
-Clone this repo, and use cargo to run examples `ch02` - `ch07`:
+Clone this repo, and use cargo to run examples `ch02` - `ch05`:
 
 `cargo run --example ch02`
 

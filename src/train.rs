@@ -10,11 +10,9 @@ use burn::{
 
 use crate::{
     dataset::{GPTDatasetV1, GPTDatasetV1Batcher},
-    gpt::GPTModelConfig,
+    gpt::{GPTModel, GPTModelConfig},
     tokenizer,
 };
-
-pub const MAX_LENGTH: usize = 256;
 
 #[derive(Config)]
 pub struct TrainingConfig {
@@ -45,7 +43,9 @@ pub fn train<B: AutodiffBackend>(
     artifact_dir: &str,
     config: TrainingConfig,
     device: B::Device,
-) {
+) -> GPTModel<B> {
+    assert_eq!(config.model.context_length, 256);
+
     create_artifact_dir(artifact_dir);
     config
         .save(format!("{artifact_dir}/config.json"))
@@ -56,8 +56,8 @@ pub fn train<B: AutodiffBackend>(
     let batcher = GPTDatasetV1Batcher::default();
 
     let tokenizer = tokenizer::BpeTokenizer::new();
-    let (train, valid) = GPTDatasetV1::<MAX_LENGTH>::new(text, &tokenizer, MAX_LENGTH)
-        .split_train_valid(config.valid_ratio);
+    let (train, valid) =
+        GPTDatasetV1::<256>::new(text, &tokenizer, 256).split_train_valid(config.valid_ratio);
 
     println!("Train dataset size: {}", train.len());
     println!("Valid dataset size: {}", valid.len());
@@ -90,6 +90,9 @@ pub fn train<B: AutodiffBackend>(
     let model_trained = learner.fit(dataloader_train, dataloader_valid);
 
     model_trained
+        .clone()
         .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
         .expect("Trained model should be saved successfully");
+
+    model_trained
 }

@@ -80,7 +80,7 @@ impl<B: Backend> CausalAttention<B> {
                 .clone()
                 .slice([..num_tokens, ..num_tokens])
                 .unsqueeze(),
-            -f64::INFINITY,
+            f64::NEG_INFINITY,
         );
 
         let attn_weights = softmax(masked.div_scalar(self.d_out.to_f64().sqrt()), D - 1);
@@ -138,15 +138,15 @@ impl<B: Backend> NaiveMultiHeadAttention<B> {
 
 #[derive(Module, Debug)]
 pub struct MultiHeadAttention<B: Backend> {
-    d_out: usize,
-    num_heads: usize,
-    head_dim: usize,
-    w_query: Linear<B>,
-    w_key: Linear<B>,
-    w_value: Linear<B>,
-    out_proj: Linear<B>,
-    dropout: Dropout,
-    mask: Tensor<B, 2, Bool>,
+    pub d_out: usize,
+    pub num_heads: usize,
+    pub head_dim: usize,
+    pub w_query: Linear<B>,
+    pub w_key: Linear<B>,
+    pub w_value: Linear<B>,
+    pub out_proj: Linear<B>,
+    pub dropout: Dropout,
+    pub mask: Tensor<B, 2, Bool>,
 }
 
 impl<B: Backend> MultiHeadAttention<B> {
@@ -174,7 +174,7 @@ impl<B: Backend> MultiHeadAttention<B> {
                 .clone()
                 .slice([..num_tokens, ..num_tokens])
                 .unsqueeze(),
-            -f64::INFINITY,
+            f64::NEG_INFINITY,
         );
 
         let attn_weights = softmax(masked.div_scalar(self.d_out.to_f64().sqrt()), 3);

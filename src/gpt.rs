@@ -5,25 +5,23 @@ use burn::config::Config;
 use burn::module::{Module, Param};
 use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, Linear, LinearConfig};
-use burn::tensor::Int;
 use burn::tensor::activation::softmax;
 use burn::tensor::backend::AutodiffBackend;
+use burn::tensor::{DType, Int, TensorData};
 use burn::tensor::{Tensor, backend::Backend};
 use burn::train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep};
-use lazy_static::lazy_static;
+use rand::Rng;
+use rand::distr::weighted::WeightedIndex;
+use safetensors::SafeTensors;
 
-use crate::MAX_LENGTH;
 use crate::attention::{MultiHeadAttention, MultiHeadAttentionConfig};
 use crate::dataset::GPTDatasetV1Batch;
 use crate::tokenizer::{self, ITokenizer};
 
-lazy_static! {
-    static ref TOKENIZER: tokenizer::BpeTokenizer = tokenizer::BpeTokenizer::new();
-}
-
 #[derive(Module, Debug)]
 pub struct GPTModel<B: Backend> {
-    pub vocab_size: usize,
+    vocab_size: usize,
+    context_length: usize,
     tok_emb: Embedding<B>,
     pos_emb: Embedding<B>,
     drop_emb: Dropout,
@@ -83,15 +81,17 @@ impl<B: AutodiffBackend> TrainStep<GPTDatasetV1Batch<B>, ClassificationOutput<B>
 impl<B: Backend> ValidStep<GPTDatasetV1Batch<B>, ClassificationOutput<B>> for GPTModel<B> {
     fn step(&self, batch: GPTDatasetV1Batch<B>) -> ClassificationOutput<B> {
         let start_context = "Every effort moves you";
-        let token_ids = generate_text_simple(
+        let token_ids = generate_text(
             self,
-            text_to_token_ids(start_context, &TOKENIZER),
-            50,
-            MAX_LENGTH,
+            text_to_token_ids(start_context, &crate::tokenizer::TOKENIZER),
+            25,
+            self.context_length,
+            1.4,
+            Some(50),
         );
         println!(
             "Output preview: {:?}",
-            token_ids_to_text(token_ids, &TOKENIZER)
+            token_ids_to_text(token_ids, &crate::tokenizer::TOKENIZER)
         );
 
         self.forward_train(batch.input_ids, batch.target_ids)
@@ -113,6 +113,7 @@ impl GPTModelConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> GPTModel<B> {
         GPTModel {
             vocab_size: self.vocab_size,
+            context_length: self.context_length,
             tok_emb: EmbeddingConfig::new(self.vocab_size, self.emb_dim).init(device),
             pos_emb: EmbeddingConfig::new(self.vocab_size, self.emb_dim).init(device),
             drop_emb: DropoutConfig::new(self.drop_rate).init(),
@@ -132,6 +133,175 @@ impl GPTModelConfig {
             out_head: LinearConfig::new(self.emb_dim, self.vocab_size)
                 .with_bias(false)
                 .init(device),
+        }
+    }
+
+    pub fn init_pretrained<B: Backend>(&self, pth_path: &str, device: &B::Device) -> GPTModel<B> {
+        let buffer = std::fs::read(pth_path).unwrap();
+        let tensors = SafeTensors::deserialize(&buffer).expect("Failed to deserialize tensors");
+
+        fn tensor_data(tensors: &SafeTensors<'_>, name: &str) -> TensorData {
+            let tensor = tensors.tensor(name).unwrap();
+            let bytes = tensor.data();
+            let mut shape = tensor.shape().to_vec();
+            let dtype = tensor.dtype();
+
+            if name.ends_with(".weight") && !name.contains("_emb") {
+                shape.reverse();
+            }
+
+            println!("load tensor: {} -> {:?}", name, shape);
+
+            TensorData::from_bytes(
+                bytes.to_vec(),
+                shape,
+                match dtype {
+                    safetensors::Dtype::BOOL => DType::Bool,
+                    safetensors::Dtype::F32 => DType::F32,
+                    safetensors::Dtype::F64 => DType::F64,
+                    safetensors::Dtype::I32 => DType::I32,
+                    safetensors::Dtype::I64 => DType::I64,
+                    _ => panic!("Unsupported dtype"),
+                },
+            )
+        }
+
+        let tok_emb = Embedding {
+            weight: Param::from_data(tensor_data(&tensors, "tok_emb.weight"), device),
+        };
+        let pos_emb = Embedding {
+            weight: Param::from_data(tensor_data(&tensors, "pos_emb.weight"), device),
+        };
+        let drop_emb = DropoutConfig::new(self.drop_rate).init();
+
+        let trf_blocks = (0..self.n_layers)
+            .map(|i| {
+                let attn = MultiHeadAttention {
+                    d_out: self.emb_dim,
+                    num_heads: self.n_heads,
+                    head_dim: self.emb_dim / self.n_heads,
+                    w_query: Linear {
+                        weight: Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_query.weight", i)),
+                            device,
+                        ),
+                        bias: Some(Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_query.bias", i)),
+                            device,
+                        )),
+                    },
+                    w_key: Linear {
+                        weight: Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_key.weight", i)),
+                            device,
+                        ),
+                        bias: Some(Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_key.bias", i)),
+                            device,
+                        )),
+                    },
+                    w_value: Linear {
+                        weight: Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_value.weight", i)),
+                            device,
+                        ),
+                        bias: Some(Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.att.W_value.bias", i)),
+                            device,
+                        )),
+                    },
+                    out_proj: Linear {
+                        weight: Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.att.out_proj.weight", i)),
+                            device,
+                        ),
+                        bias: Some(Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.att.out_proj.bias", i)),
+                            device,
+                        )),
+                    },
+                    dropout: DropoutConfig::new(self.drop_rate).init(),
+                    mask: Tensor::from_data(
+                        tensor_data(&tensors, &format!("trf_blocks.{}.att.mask", i)),
+                        device,
+                    ),
+                };
+                let ff = FeedForward {
+                    linear1: Linear {
+                        weight: Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.ff.layers.0.weight", i)),
+                            device,
+                        ),
+                        bias: Some(Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.ff.layers.0.bias", i)),
+                            device,
+                        )),
+                    },
+                    gelu: GELU {},
+                    linear2: Linear {
+                        weight: Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.ff.layers.2.weight", i)),
+                            device,
+                        ),
+                        bias: Some(Param::from_data(
+                            tensor_data(&tensors, &format!("trf_blocks.{}.ff.layers.2.bias", i)),
+                            device,
+                        )),
+                    },
+                };
+                let norm1 = LayerNorm {
+                    eps: 1e-5,
+                    scale: Param::from_data(
+                        tensor_data(&tensors, &format!("trf_blocks.{}.norm1.scale", i)),
+                        device,
+                    ),
+                    shift: Param::from_data(
+                        tensor_data(&tensors, &format!("trf_blocks.{}.norm1.shift", i)),
+                        device,
+                    ),
+                };
+                let norm2 = LayerNorm {
+                    eps: 1e-5,
+                    scale: Param::from_data(
+                        tensor_data(&tensors, &format!("trf_blocks.{}.norm2.scale", i)),
+                        device,
+                    ),
+                    shift: Param::from_data(
+                        tensor_data(&tensors, &format!("trf_blocks.{}.norm2.shift", i)),
+                        device,
+                    ),
+                };
+                let dropout_shortcut = DropoutConfig::new(self.drop_rate).init();
+
+                TransformerBlock {
+                    attn,
+                    ff,
+                    norm1,
+                    norm2,
+                    dropout_shortcut,
+                }
+            })
+            .collect();
+
+        let final_norm = LayerNorm {
+            eps: 1e-5,
+            scale: Param::from_data(tensor_data(&tensors, "final_norm.shift"), device),
+            shift: Param::from_data(tensor_data(&tensors, "final_norm.scale"), device),
+        };
+        let out_head = Linear {
+            weight: Param::from_data(tensor_data(&tensors, "out_head.weight"), device),
+            bias: None,
+        };
+
+        GPTModel {
+            vocab_size: self.vocab_size,
+            context_length: self.context_length,
+            tok_emb,
+            pos_emb,
+            drop_emb,
+            trf_blocks,
+            final_norm,
+            out_head,
         }
     }
 }
@@ -289,6 +459,70 @@ pub fn generate_text_simple<B: Backend>(
 
         let probas = softmax(last_logits, 1);
         let idx_next = probas.argmax(1);
+        idx = Tensor::cat(vec![idx, idx_next], 1);
+    }
+
+    idx
+}
+
+pub fn generate_text<B: Backend>(
+    model: &GPTModel<B>,
+    mut idx: Tensor<B, 2, Int>,
+    max_new_tokens: usize,
+    context_size: usize,
+    temperature: f64,
+    top_k: Option<usize>,
+) -> Tensor<B, 2, Int> {
+    for _ in 0..max_new_tokens {
+        let [n_batches, n_tokens] = idx.clone().dims();
+        let idx_cond = idx.clone().slice([
+            0..n_batches,
+            n_tokens.max(context_size) - context_size..n_tokens,
+        ]);
+
+        let logits = model.forward(idx_cond);
+        let mut last_logits = logits
+            .slice([0..n_batches, n_tokens - 1..n_tokens, 0..model.vocab_size])
+            .squeeze::<2>(1);
+
+        if let Some(top_k) = top_k {
+            let top_k_logits = last_logits.clone().topk(top_k, 1);
+            let min_val = top_k_logits.slice([0..n_batches, top_k - 1..top_k]);
+            last_logits = last_logits
+                .clone()
+                .mask_fill(last_logits.lower(min_val), f64::NEG_INFINITY);
+        }
+
+        let idx_next = if temperature > 0.0 {
+            last_logits = last_logits.div_scalar(temperature);
+            let probas = softmax(last_logits, 1);
+
+            // sample from the distribution for each batch
+            let mut next_idxs = Vec::new();
+            for i in 0..n_batches {
+                let mut rng = rand::rng();
+                let batch_probas_data = probas.clone().slice([i..i + 1, 0..n_tokens]).to_data();
+                let idx = if let Ok(batch_probas) = batch_probas_data.to_vec::<f32>() {
+                    if let Ok(dist) = WeightedIndex::new(batch_probas) {
+                        rng.sample(dist)
+                    } else {
+                        0
+                    }
+                } else {
+                    if let Ok(dist) = WeightedIndex::new(batch_probas_data.to_vec::<f64>().unwrap())
+                    {
+                        rng.sample(dist)
+                    } else {
+                        0
+                    }
+                };
+                next_idxs.push(Tensor::<B, 1, Int>::from([idx]));
+            }
+            Tensor::stack(next_idxs, 0)
+        } else {
+            last_logits.argmax(1)
+        };
+
         idx = Tensor::cat(vec![idx, idx_next], 1);
     }
 

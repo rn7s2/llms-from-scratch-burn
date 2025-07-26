@@ -4,9 +4,11 @@ use burn::{
     tensor::{Int, Tensor, activation::softmax},
 };
 use llms_from_scratch_burn::{
-    MAX_LENGTH, TrainBackend, TrainingConfig,
-    gpt::{GPTModelConfig, generate_text_simple, text_to_token_ids, token_ids_to_text},
-    tokenizer::{self, ITokenizer},
+    Backend, TrainBackend, TrainingConfig,
+    gpt::{
+        GPTModelConfig, generate_text, generate_text_simple, text_to_token_ids, token_ids_to_text,
+    },
+    tokenizer::{self, ITokenizer, TOKENIZER},
 };
 
 fn main() {
@@ -22,9 +24,7 @@ fn main() {
     let model = gpt_config_124m.init::<TrainBackend>(&device);
 
     let tokenizer = tokenizer::BpeTokenizer::new();
-
     let start_context = "Every effort moves you";
-
     let token_ids = generate_text_simple(
         &model,
         text_to_token_ids(start_context, &tokenizer),
@@ -107,13 +107,50 @@ fn main() {
     println!("Tokens: {}", total_tokens);
 
     let optimizer = AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(0.1)));
-    llms_from_scratch_burn::train::<TrainBackend>(
+    let model = llms_from_scratch_burn::train::<TrainBackend>(
         &text,
         "artifacts",
         TrainingConfig::new(
-            GPTModelConfig::new(50257, MAX_LENGTH, 768, 12, 12, 0.1, false),
+            GPTModelConfig::new(50257, 256, 768, 12, 12, 0.1, false),
             optimizer,
         ),
-        device,
+        device.clone(),
+    );
+
+    // 5.3 Decoding strategies to control randomness
+    println!("\n5.3 Decoding strategies to control randomness");
+
+    let token_ids = generate_text(
+        &model,
+        text_to_token_ids(start_context, &tokenizer),
+        25,
+        256,
+        1.4,
+        Some(50),
+    );
+    println!(
+        "Output preview: {:?}",
+        token_ids_to_text(token_ids, &tokenizer)
+    );
+
+    // 5.4 Loading model weights using safetensors
+    println!("\n5.4 Loading model weights using safetensors");
+
+    let gpt_config_124m = GPTModelConfig::new(50257, 1024, 768, 12, 12, 0.1, false);
+    let model =
+        gpt_config_124m.init_pretrained::<Backend>("assets/gpt2-small-124M.safetensors", &device);
+
+    let start_context = "Every effort moves you";
+    let token_ids = generate_text(
+        &model,
+        text_to_token_ids(start_context, &TOKENIZER),
+        25,
+        1024,
+        1.4,
+        Some(50),
+    );
+    println!(
+        "Output preview: {:?}",
+        token_ids_to_text(token_ids, &TOKENIZER)
     );
 }

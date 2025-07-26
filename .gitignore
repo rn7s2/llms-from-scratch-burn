@@ -1,3 +1,4 @@
 .DS_Store
 /target
 /artifacts
+/assets/gpt2-small-124M.safetensors

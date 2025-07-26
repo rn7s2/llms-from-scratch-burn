@@ -6,7 +6,7 @@ pub mod tokenizer;
 mod train;
 
 pub use backend::{Backend, TrainBackend};
-pub use train::{MAX_LENGTH, TrainingConfig, train};
+pub use train::{TrainingConfig, train};
 
 #[cfg(test)]
 mod tests {

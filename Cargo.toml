@@ -14,7 +14,9 @@ license = "MIT"
 anyhow = "1.0.98"
 burn = { version = "0.18.0", default-features = false, features = ["dataset", "train", "wgpu"] }
 lazy_static = "1.5.0"
+rand = "0.9.2"
 regex = "1.11.1"
+safetensors = "0.6.0"
 tiktoken-rs = "0.7.0"
 
 [features]

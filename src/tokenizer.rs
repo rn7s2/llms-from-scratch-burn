@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use anyhow::{Result, anyhow};
+use lazy_static::lazy_static;
 use regex::Regex;
 use tiktoken_rs::{CoreBPE, r50k_base};
 
@@ -123,4 +124,8 @@ impl ITokenizer for BpeTokenizer {
     fn decode(&self, ids: &[u32]) -> Result<String> {
         self.bpe.decode(Vec::from(ids))
     }
+}
+
+lazy_static! {
+    pub static ref TOKENIZER: BpeTokenizer = BpeTokenizer::new();
 }

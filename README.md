@@ -17,3 +17,7 @@ Clone this repo, and use cargo to run examples `ch02` - `ch07`:
 by default, `Wgpu` will be used. In some cases, `Wgpu` backend is known to generate wrong results. If that happens, you can use the `ndarray` feature to recheck the results:
 
 `cargo run -F ndarray --example ch02`
+
+## Note
+
+for ch05, `gpt2-small-124M.safetensors` can be downloaded from [Hugging Face](https://huggingface.co/rasbt/gpt2-from-scratch-pytorch/tree/main)

@@ -133,7 +133,7 @@ fn main() {
 
     let mask = Tensor::<TrainBackend, 2, Bool>::tril_mask([CONTEXT_LEN, CONTEXT_LEN], 0, &device);
     println!("Mask: {}", mask);
-    let masked = attn_scores.mask_fill(mask, -f64::INFINITY);
+    let masked = attn_scores.mask_fill(mask, f64::NEG_INFINITY);
     println!("Masked attention scores: {}", masked);
 
     let attn_weights = softmax(masked.div_scalar((DIM_OUT as f64).sqrt()), 1);

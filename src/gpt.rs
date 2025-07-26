@@ -115,7 +115,7 @@ impl GPTModelConfig {
             vocab_size: self.vocab_size,
             context_length: self.context_length,
             tok_emb: EmbeddingConfig::new(self.vocab_size, self.emb_dim).init(device),
-            pos_emb: EmbeddingConfig::new(self.vocab_size, self.emb_dim).init(device),
+            pos_emb: EmbeddingConfig::new(self.context_length, self.emb_dim).init(device),
             drop_emb: DropoutConfig::new(self.drop_rate).init(),
             trf_blocks: (0..self.n_layers)
                 .map(|_| {

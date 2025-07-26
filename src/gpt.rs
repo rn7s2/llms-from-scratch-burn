@@ -7,7 +7,7 @@ use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, Linear, LinearConfig};
 use burn::tensor::activation::softmax;
 use burn::tensor::backend::AutodiffBackend;
-use burn::tensor::{DType, Int, TensorData};
+use burn::tensor::{Bool, DType, Int, TensorData};
 use burn::tensor::{Tensor, backend::Backend};
 use burn::train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep};
 use rand::Rng;
@@ -221,8 +221,9 @@ impl GPTModelConfig {
                         )),
                     },
                     dropout: DropoutConfig::new(self.drop_rate).init(),
-                    mask: Tensor::from_data(
-                        tensor_data(&tensors, &format!("trf_blocks.{}.att.mask", i)),
+                    mask: Tensor::<B, 2, Bool>::tril_mask(
+                        [self.context_length, self.context_length],
+                        0,
                         device,
                     ),
                 };

@@ -177,7 +177,7 @@ impl<B: Backend> MultiHeadAttention<B> {
             f64::NEG_INFINITY,
         );
 
-        let attn_weights = softmax(masked.div_scalar(self.d_out.to_f64().sqrt()), 3);
+        let attn_weights = softmax(masked.div_scalar(self.head_dim.to_f64().sqrt()), 3);
         let attn_weights = self.dropout.forward(attn_weights);
 
         let context_vecs = attn_weights.matmul(values).swap_dims(1, 2);

@@ -24,15 +24,20 @@ pub struct TrainingConfig {
     pub optimizer: AdamConfig,
     #[config(default = 10)]
     pub num_epochs: usize,
-    #[config(default = 6)]
+    #[config(default = 2)]
     pub batch_size: usize,
     #[config(default = 1)]
     pub num_workers: usize,
-    #[config(default = 42)]
+    #[config(default = 123)]
     pub seed: u64,
     #[config(default = 0.0004)]
     pub learning_rate: f64,
-    pub restore_epoch: Option<usize>,
+}
+
+fn create_artifact_dir(artifact_dir: &str) {
+    // Remove existing artifacts before to get an accurate learner summary
+    std::fs::remove_dir_all(artifact_dir).ok();
+    std::fs::create_dir_all(artifact_dir).ok();
 }
 
 pub fn train<B: AutodiffBackend>(
@@ -41,7 +46,7 @@ pub fn train<B: AutodiffBackend>(
     config: TrainingConfig,
     device: B::Device,
 ) {
-    std::fs::create_dir_all(artifact_dir).ok();
+    create_artifact_dir(artifact_dir);
     config
         .save(format!("{artifact_dir}/config.json"))
         .expect("Config should be saved successfully");
@@ -69,22 +74,18 @@ pub fn train<B: AutodiffBackend>(
         .num_workers(config.num_workers)
         .build(valid);
 
-    let mut learner_config = LearnerBuilder::new(artifact_dir)
+    let learner = LearnerBuilder::new(artifact_dir)
         .metric_train_numeric(LossMetric::new())
         .metric_valid_numeric(LossMetric::new())
         .with_file_checkpointer(CompactRecorder::new())
         .devices(vec![device.clone()])
         .num_epochs(config.num_epochs)
-        .summary();
-    if let Some(epoch) = config.restore_epoch {
-        learner_config = learner_config.checkpoint(epoch);
-    }
-
-    let learner = learner_config.build(
-        config.model.init::<B>(&device),
-        config.optimizer.init(),
-        config.learning_rate,
-    );
+        .summary()
+        .build(
+            config.model.init::<B>(&device),
+            config.optimizer.init(),
+            config.learning_rate,
+        );
 
     let model_trained = learner.fit(dataloader_train, dataloader_valid);
 

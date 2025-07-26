@@ -97,7 +97,7 @@ fn main() {
     // 5.1.3 Calculating the training and validation set losses
     println!("\n5.1.3 Calculating the training and validation set losses");
 
-    let path = "assets/big.txt";
+    let path = "assets/the-verdict.txt";
     let text = std::fs::read_to_string(path).unwrap();
 
     let total_characters = text.len();
@@ -113,9 +113,7 @@ fn main() {
         TrainingConfig::new(
             GPTModelConfig::new(50257, MAX_LENGTH, 768, 12, 12, 0.1, false),
             optimizer,
-        )
-        .with_num_epochs(200)
-        .with_restore_epoch(None),
+        ),
         device,
     );
 }

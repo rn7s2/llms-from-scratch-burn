@@ -285,8 +285,8 @@ impl GPTModelConfig {
 
         let final_norm = LayerNorm {
             eps: 1e-5,
-            scale: Param::from_data(tensor_data(&tensors, "final_norm.shift"), device),
-            shift: Param::from_data(tensor_data(&tensors, "final_norm.scale"), device),
+            scale: Param::from_data(tensor_data(&tensors, "final_norm.scale"), device),
+            shift: Param::from_data(tensor_data(&tensors, "final_norm.shift"), device),
         };
         let out_head = Linear {
             weight: Param::from_data(tensor_data(&tensors, "out_head.weight"), device),

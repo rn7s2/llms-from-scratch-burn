@@ -501,7 +501,10 @@ pub fn generate_text<B: Backend>(
             let mut next_idxs = Vec::new();
             for i in 0..n_batches {
                 let mut rng = rand::rng();
-                let batch_probas_data = probas.clone().slice([i..i + 1, 0..n_tokens]).to_data();
+                let batch_probas_data = probas
+                    .clone()
+                    .slice([i..i + 1, 0..model.vocab_size])
+                    .to_data();
                 let idx = if let Ok(batch_probas) = batch_probas_data.to_vec::<f32>() {
                     if let Ok(dist) = WeightedIndex::new(batch_probas) {
                         rng.sample(dist)

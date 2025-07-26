@@ -14,10 +14,12 @@ Clone this repo, and use cargo to run examples `ch02` - `ch05`:
 
 `cargo run --example ch02`
 
-by default, `Wgpu` will be used. In some cases, `Wgpu` backend is known to generate wrong results. If that happens, you can use the `ndarray` feature to recheck the results:
+By default, `Wgpu` will be used. In some cases (rare though), `Wgpu` backend is known to generate wrong results. If that happens, you can use the `ndarray` feature to recheck the results:
 
 `cargo run -F ndarray --example ch02`
 
 ## Note
 
-for ch05, `gpt2-small-124M.safetensors` can be downloaded from [Hugging Face](https://huggingface.co/rasbt/gpt2-from-scratch-pytorch/tree/main)
+For ch05, `gpt2-small-124M.safetensors` needs to be downloaded from [Hugging Face](https://huggingface.co/rasbt/gpt2-from-scratch-pytorch/tree/main)
+
+You will need to put it under the `assets` folder.

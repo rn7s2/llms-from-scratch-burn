@@ -61,12 +61,12 @@ fn main() {
     );
     println!(
         "Outputs batch 1: {:?}",
-        token_ids_to_text(token_ids.slice([0..1]).squeeze(2), &tokenizer)
+        token_ids_to_text(token_ids.slice([0..1]).squeeze_dim(2), &tokenizer)
     );
 
     let target_probas = probas
         .gather(2, targets.clone().unsqueeze_dim(2))
-        .squeeze::<2>(2);
+        .squeeze_dim::<2>(2);
     println!("Target probabilities:\n{}", target_probas);
 
     let log_probas = target_probas.flatten::<1>(0, 1).log();

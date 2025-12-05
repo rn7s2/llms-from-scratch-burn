@@ -31,7 +31,11 @@ fn main() {
         .transpose();
     println!("{}", query_2);
 
-    let attn_scores_2 = inputs.clone().matmul(query_2).transpose().squeeze::<1>(0);
+    let attn_scores_2 = inputs
+        .clone()
+        .matmul(query_2)
+        .transpose()
+        .squeeze_dim::<1>(0);
     println!("Attention scores: {}", attn_scores_2);
 
     let attn_weights_2 = softmax(attn_scores_2, 0);
@@ -41,7 +45,7 @@ fn main() {
     let context_vec_2 = attn_weights_2
         .unsqueeze::<2>()
         .matmul(inputs.clone())
-        .squeeze::<1>(0);
+        .squeeze_dim::<1>(0);
     println!("Context vector: {}", context_vec_2);
 
     // 3.3.2. attention weights for all input tokens
@@ -90,7 +94,7 @@ fn main() {
     println!("Attention weights: {}", attn_weights_2);
     println!("Sum: {}", attn_weights_2.clone().sum_dim(1));
 
-    let context_vec_2 = attn_weights_2.matmul(values).squeeze::<1>(0);
+    let context_vec_2 = attn_weights_2.matmul(values).squeeze_dim::<1>(0);
     println!("Context vector: {}", context_vec_2);
 
     // 3.4.2. implementing a compact SelfAttention class

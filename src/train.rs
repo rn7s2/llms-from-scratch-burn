@@ -5,7 +5,7 @@ use burn::{
     optim::AdamConfig,
     record::CompactRecorder,
     tensor::backend::AutodiffBackend,
-    train::{LearnerBuilder, metric::LossMetric},
+    train::{LearnerBuilder, LearningStrategy, metric::LossMetric},
 };
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
     tokenizer,
 };
 
-#[derive(Config)]
+#[derive(Config, Debug)]
 pub struct TrainingConfig {
     pub model: GPTModelConfig,
     #[config(default = 0.1)]
@@ -43,7 +43,7 @@ pub fn train<B: AutodiffBackend>(
     artifact_dir: &str,
     config: TrainingConfig,
     device: B::Device,
-) -> GPTModel<B> {
+) -> GPTModel<B::InnerBackend> {
     assert_eq!(config.model.context_length, 256);
 
     create_artifact_dir(artifact_dir);
@@ -51,7 +51,7 @@ pub fn train<B: AutodiffBackend>(
         .save(format!("{artifact_dir}/config.json"))
         .expect("Config should be saved successfully");
 
-    B::seed(config.seed);
+    B::seed(&device, config.seed);
 
     let batcher = GPTDatasetV1Batcher::default();
 
@@ -78,7 +78,7 @@ pub fn train<B: AutodiffBackend>(
         .metric_train_numeric(LossMetric::new())
         .metric_valid_numeric(LossMetric::new())
         .with_file_checkpointer(CompactRecorder::new())
-        .devices(vec![device.clone()])
+        .learning_strategy(LearningStrategy::SingleDevice(device.clone()))
         .num_epochs(config.num_epochs)
         .summary()
         .build(
@@ -87,12 +87,13 @@ pub fn train<B: AutodiffBackend>(
             config.learning_rate,
         );
 
-    let model_trained = learner.fit(dataloader_train, dataloader_valid);
+    let result = learner.fit(dataloader_train, dataloader_valid);
 
-    model_trained
+    result
+        .model
         .clone()
         .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
         .expect("Trained model should be saved successfully");
 
-    model_trained
+    result.model
 }

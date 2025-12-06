@@ -7,7 +7,7 @@ use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, Linear, LinearConfig};
 use burn::tensor::activation::softmax;
 use burn::tensor::backend::AutodiffBackend;
-use burn::tensor::{Bool, DType, Int, TensorData};
+use burn::tensor::{Bool, Bytes, DType, Int, TensorData};
 use burn::tensor::{Tensor, backend::Backend};
 use burn::train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep};
 use rand::Rng;
@@ -146,14 +146,14 @@ impl GPTModelConfig {
             device: &B::Device,
         ) -> Param<Tensor<B, D>> {
             let tensor = tensors.tensor(name).unwrap();
-            let bytes = tensor.data();
+            let bytes = Bytes::from_bytes_vec(tensor.data().to_vec());
             let shape = tensor.shape();
             let dtype = tensor.dtype();
             let need_transpose = name.ends_with(".weight") && !name.contains("_emb");
 
             let data = Tensor::<B, D>::from_data(
                 TensorData::from_bytes(
-                    bytes.to_vec(),
+                    bytes,
                     shape,
                     match dtype {
                         safetensors::Dtype::BOOL => DType::Bool,
@@ -468,7 +468,7 @@ pub fn generate_text_simple<B: Backend>(
         let logits = model.forward(idx_cond);
         let last_logits = logits
             .slice([0..n_batches, n_tokens - 1..n_tokens, 0..model.vocab_size])
-            .squeeze::<2>(1);
+            .squeeze_dim::<2>(1);
 
         let probas = softmax(last_logits, 1);
         let idx_next = probas.argmax(1);
@@ -496,7 +496,7 @@ pub fn generate_text<B: Backend>(
         let logits = model.forward(idx_cond);
         let mut last_logits = logits
             .slice([0..n_batches, n_tokens - 1..n_tokens, 0..model.vocab_size])
-            .squeeze::<2>(1);
+            .squeeze_dim::<2>(1);
 
         if let Some(top_k) = top_k {
             let top_k_logits = last_logits.clone().topk(top_k, 1);
@@ -557,7 +557,7 @@ pub fn token_ids_to_text<B: Backend>(
     token_ids: Tensor<B, 2, Int>,
     tokenizer: &tokenizer::BpeTokenizer,
 ) -> Result<String> {
-    let out_ids = token_ids.squeeze::<1>(0).to_data();
+    let out_ids = token_ids.squeeze_dim::<1>(0).to_data();
     let u32_ids = if let Ok(i32_ids) = out_ids.to_vec::<i32>() {
         i32_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
     } else {

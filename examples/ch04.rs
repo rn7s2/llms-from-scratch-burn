@@ -83,7 +83,7 @@ fn main() {
     let out = generate_text_simple(&model, encoded_tensor, 6, gpt_config_124m.context_length);
     println!("Output: {}", out);
 
-    let out_ids = out.squeeze::<1>(0).to_data();
+    let out_ids = out.squeeze_dim::<1>(0).to_data();
     let u32_ids = if let Ok(i32_ids) = out_ids.to_vec::<i32>() {
         i32_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
     } else {

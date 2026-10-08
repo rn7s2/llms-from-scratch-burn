@@ -37,12 +37,7 @@ fn create_artifact_dir(artifact_dir: &str) {
     std::fs::create_dir_all(artifact_dir).ok();
 }
 
-pub fn train(
-    text: &str,
-    artifact_dir: &str,
-    config: TrainingConfig,
-    device: Device,
-) -> GPTModel {
+pub fn train(text: &str, artifact_dir: &str, config: TrainingConfig, device: Device) -> GPTModel {
     assert_eq!(config.model.context_length, 256);
 
     create_artifact_dir(artifact_dir);

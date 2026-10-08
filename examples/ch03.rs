@@ -31,7 +31,11 @@ fn main() {
         .transpose();
     println!("{}", query_2);
 
-    let attn_scores_2 = inputs.clone().matmul(query_2).transpose().squeeze_dim::<1>(0);
+    let attn_scores_2 = inputs
+        .clone()
+        .matmul(query_2)
+        .transpose()
+        .squeeze_dim::<1>(0);
     println!("Attention scores: {}", attn_scores_2);
 
     let attn_weights_2 = softmax(attn_scores_2, 0);
@@ -117,8 +121,7 @@ fn main() {
     println!("Sum: {}", attn_weights.clone().sum_dim(1));
 
     const CONTEXT_LEN: usize = INPUTS.len();
-    let mask_simple =
-        Tensor::<2>::tril(Tensor::ones([CONTEXT_LEN, CONTEXT_LEN], &device), 0);
+    let mask_simple = Tensor::<2>::tril(Tensor::ones([CONTEXT_LEN, CONTEXT_LEN], &device), 0);
     println!("Mask: {}", mask_simple);
 
     let masked_simple = attn_weights * mask_simple.clone();
@@ -153,14 +156,8 @@ fn main() {
     let batch = Tensor::stack::<3>(vec![inputs.clone(), inputs.clone()], 0);
     println!("{}", batch);
 
-    let model = CausalAttentionConfig::new().init(
-        DIM_IN,
-        DIM_OUT,
-        CONTEXT_LEN,
-        0.0,
-        false,
-        &device,
-    );
+    let model =
+        CausalAttentionConfig::new().init(DIM_IN, DIM_OUT, CONTEXT_LEN, 0.0, false, &device);
     println!("{}", model);
 
     let ca = model.forward(batch.clone());
@@ -182,8 +179,8 @@ fn main() {
     // 3.6.2. implementing multi-head attention with weight splits
     println!("\n3.6.2. implementing multi-head attention with weight splits");
 
-    let mha = MultiHeadAttentionConfig::new(DIM_IN, DIM_OUT, CONTEXT_LEN, 0.0, 2, false)
-        .init(&device);
+    let mha =
+        MultiHeadAttentionConfig::new(DIM_IN, DIM_OUT, CONTEXT_LEN, 0.0, 2, false).init(&device);
     println!("{}", mha);
 
     let context_vecs = mha.forward(batch);

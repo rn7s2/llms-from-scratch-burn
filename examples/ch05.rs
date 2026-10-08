@@ -73,7 +73,10 @@ fn main() {
     println!("Log probabilities:\n{}", log_probas);
 
     let avg_log_probas = log_probas.mean();
-    println!("Average log probability: {}", avg_log_probas.into_scalar::<f64>());
+    println!(
+        "Average log probability: {}",
+        avg_log_probas.into_scalar::<f64>()
+    );
 
     // Logits have shape (batch_size, num_tokens, vocab_size)
     println!("Logits shape: {:?}", logits.dims());
@@ -137,8 +140,7 @@ fn main() {
     println!("\n5.4 Loading model weights using safetensors");
 
     let gpt_config_124m = GPTModelConfig::new(50257, 1024, 768, 12, 12, 0.1, true);
-    let model =
-        gpt_config_124m.init_pretrained("assets/gpt2-small-124M.safetensors", &device);
+    let model = gpt_config_124m.init_pretrained("assets/gpt2-small-124M.safetensors", &device);
 
     let start_context = "Every effort moves you";
     for _ in 0..5 {

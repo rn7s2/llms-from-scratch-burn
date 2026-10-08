@@ -13,6 +13,7 @@ use rand::Rng;
 use rand::distr::weighted::WeightedIndex;
 use safetensors::SafeTensors;
 
+use crate::attention::NaiveMultiHeadAttention;
 use crate::attention::{MultiHeadAttention, MultiHeadAttentionConfig};
 use crate::dataset::GPTDatasetV1Batch;
 use crate::tokenizer::{self, ITokenizer};
@@ -99,6 +100,8 @@ pub struct GPTModelConfig {
     pub n_layers: usize,
     pub drop_rate: f64,
     pub qkv_bias: bool,
+    #[config(default = false)]
+    pub use_naive: bool,
 }
 
 impl GPTModelConfig {
@@ -118,6 +121,7 @@ impl GPTModelConfig {
                         self.drop_rate,
                         self.qkv_bias,
                     )
+                    .with_use_naive(self.use_naive)
                     .init(device)
                 })
                 .collect(),
@@ -181,7 +185,7 @@ impl GPTModelConfig {
 
         let trf_blocks = (0..self.n_layers)
             .map(|i| {
-                let attn = MultiHeadAttention {
+                let attn = Attention::Split(MultiHeadAttention {
                     d_out: self.emb_dim,
                     num_heads: self.n_heads,
                     head_dim: self.emb_dim / self.n_heads,
@@ -239,7 +243,7 @@ impl GPTModelConfig {
                         0,
                         device,
                     ),
-                };
+                });
                 let ff = FeedForward {
                     linear1: Linear {
                         weight: param_tensor(
@@ -313,8 +317,23 @@ impl GPTModelConfig {
 }
 
 #[derive(Module, Debug)]
+enum Attention {
+    Split(MultiHeadAttention),
+    Naive(NaiveMultiHeadAttention),
+}
+
+impl Attention {
+    fn forward(&self, x: Tensor<3>) -> Tensor<3> {
+        match self {
+            Attention::Split(mha) => mha.forward(x),
+            Attention::Naive(mha) => mha.forward(x),
+        }
+    }
+}
+
+#[derive(Module, Debug)]
 pub struct TransformerBlock {
-    attn: MultiHeadAttention,
+    attn: Attention,
     ff: FeedForward,
     norm1: LayerNorm,
     norm2: LayerNorm,
@@ -346,20 +365,28 @@ pub struct TransformerBlockConfig {
     pub n_heads: usize,
     pub drop_rate: f64,
     pub qkv_bias: bool,
+    #[config(default = false)]
+    pub use_naive: bool,
 }
 
 impl TransformerBlockConfig {
     pub fn init(&self, device: &Device) -> TransformerBlock {
+        let mha_config = MultiHeadAttentionConfig::new(
+            self.emb_dim,
+            self.emb_dim,
+            self.context_length,
+            self.drop_rate,
+            self.n_heads,
+            self.qkv_bias,
+        );
+        let attn = if self.use_naive {
+            Attention::Naive(mha_config.init_naive(device))
+        } else {
+            Attention::Split(mha_config.init(device))
+        };
+
         TransformerBlock {
-            attn: MultiHeadAttentionConfig::new(
-                self.emb_dim,
-                self.emb_dim,
-                self.context_length,
-                self.drop_rate,
-                self.n_heads,
-                self.qkv_bias,
-            )
-            .init(device),
+            attn,
             ff: FeedForwardConfig::new(self.emb_dim).init(device),
             norm1: LayerNormConfig::new(self.emb_dim).init(device),
             norm2: LayerNormConfig::new(self.emb_dim).init(device),

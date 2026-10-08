@@ -5,7 +5,7 @@ pub mod gpt;
 pub mod tokenizer;
 mod train;
 
-pub use backend::{Backend, TrainBackend};
+pub use backend::Device;
 pub use train::{TrainingConfig, train};
 
 #[cfg(test)]

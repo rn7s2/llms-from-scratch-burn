@@ -3,9 +3,8 @@ use burn::{
     data::{dataloader::DataLoaderBuilder, dataset::Dataset},
     module::Module,
     optim::AdamConfig,
-    record::CompactRecorder,
-    tensor::backend::AutodiffBackend,
-    train::{LearnerBuilder, metric::LossMetric},
+    tensor::Device,
+    train::{Learner, SupervisedTraining, metric::LossMetric},
 };
 
 use crate::{
@@ -14,7 +13,7 @@ use crate::{
     tokenizer,
 };
 
-#[derive(Config)]
+#[derive(Config, Debug)]
 pub struct TrainingConfig {
     pub model: GPTModelConfig,
     #[config(default = 0.1)]
@@ -38,12 +37,12 @@ fn create_artifact_dir(artifact_dir: &str) {
     std::fs::create_dir_all(artifact_dir).ok();
 }
 
-pub fn train<B: AutodiffBackend>(
+pub fn train(
     text: &str,
     artifact_dir: &str,
     config: TrainingConfig,
-    device: B::Device,
-) -> GPTModel<B> {
+    device: Device,
+) -> GPTModel {
     assert_eq!(config.model.context_length, 256);
 
     create_artifact_dir(artifact_dir);
@@ -51,7 +50,7 @@ pub fn train<B: AutodiffBackend>(
         .save(format!("{artifact_dir}/config.json"))
         .expect("Config should be saved successfully");
 
-    B::seed(config.seed);
+    device.seed(config.seed);
 
     let batcher = GPTDatasetV1Batcher::default();
 
@@ -74,25 +73,26 @@ pub fn train<B: AutodiffBackend>(
         .num_workers(config.num_workers)
         .build(valid);
 
-    let learner = LearnerBuilder::new(artifact_dir)
+    let learner = Learner::new(
+        config.model.init(&device.clone().autodiff()).train(),
+        config.optimizer.init(),
+        config.learning_rate,
+    );
+
+    let result = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_valid)
         .metric_train_numeric(LossMetric::new())
         .metric_valid_numeric(LossMetric::new())
-        .with_file_checkpointer(CompactRecorder::new())
-        .devices(vec![device.clone()])
+        .with_default_checkpointers()
         .num_epochs(config.num_epochs)
         .summary()
-        .build(
-            config.model.init::<B>(&device),
-            config.optimizer.init(),
-            config.learning_rate,
-        );
+        .launch(learner);
 
-    let model_trained = learner.fit(dataloader_train, dataloader_valid);
+    let model = result.model;
 
-    model_trained
+    model
         .clone()
-        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+        .save_file(format!("{artifact_dir}/model"))
         .expect("Trained model should be saved successfully");
 
-    model_trained
+    model
 }

@@ -3,12 +3,12 @@ use burn::{
     tensor::{Bool, Distribution, Tensor, activation::softmax},
 };
 use llms_from_scratch_burn::{
-    TrainBackend,
+    Device,
     attention::{CausalAttentionConfig, MultiHeadAttentionConfig, SelfAttentionV2Config},
 };
 
 fn main() {
-    let device = Default::default();
+    let device = Device::default();
 
     const INPUTS: [[f64; 3]; 6] = [
         [0.43, 0.15, 0.89], // Your     (x^1)
@@ -18,7 +18,7 @@ fn main() {
         [0.77, 0.25, 0.10], // one      (x^5)
         [0.05, 0.80, 0.55], // step     (x^6)
     ];
-    let inputs = Tensor::<TrainBackend, 2>::from(INPUTS);
+    let inputs = Tensor::<2>::from(INPUTS);
 
     // 3.3. attending to different parts of the input with self-attention
     println!("3.3. attending to different parts of the input with self-attention");
@@ -26,12 +26,12 @@ fn main() {
     // 3.3.1. attention weights for the second token (a single query)
     println!("\n3.3.1. attention weights for the second token (a single query)");
 
-    let query_2 = Tensor::<TrainBackend, 1>::from_data(INPUTS[1], &device)
+    let query_2 = Tensor::<1>::from_data(INPUTS[1], &device)
         .unsqueeze::<2>()
         .transpose();
     println!("{}", query_2);
 
-    let attn_scores_2 = inputs.clone().matmul(query_2).transpose().squeeze::<1>(0);
+    let attn_scores_2 = inputs.clone().matmul(query_2).transpose().squeeze_dim::<1>(0);
     println!("Attention scores: {}", attn_scores_2);
 
     let attn_weights_2 = softmax(attn_scores_2, 0);
@@ -41,7 +41,7 @@ fn main() {
     let context_vec_2 = attn_weights_2
         .unsqueeze::<2>()
         .matmul(inputs.clone())
-        .squeeze::<1>(0);
+        .squeeze_dim::<1>(0);
     println!("Context vector: {}", context_vec_2);
 
     // 3.3.2. attention weights for all input tokens
@@ -70,11 +70,11 @@ fn main() {
     println!("\n3.4.1. computing the attention weights step by step");
 
     let distribution = Distribution::Uniform(0.0, 1.0); // Any random value between 0.0 and 1.0
-    let w_query = Tensor::<TrainBackend, 2>::random([DIM_IN, DIM_OUT], distribution, &device);
-    let w_key = Tensor::<TrainBackend, 2>::random([DIM_IN, DIM_OUT], distribution, &device);
-    let w_value = Tensor::<TrainBackend, 2>::random([DIM_IN, DIM_OUT], distribution, &device);
+    let w_query = Tensor::<2>::random([DIM_IN, DIM_OUT], distribution, &device);
+    let w_key = Tensor::<2>::random([DIM_IN, DIM_OUT], distribution, &device);
+    let w_value = Tensor::<2>::random([DIM_IN, DIM_OUT], distribution, &device);
 
-    let query_2 = Tensor::<TrainBackend, 1>::from_data(INPUTS[1], &device)
+    let query_2 = Tensor::<1>::from_data(INPUTS[1], &device)
         .unsqueeze::<2>()
         .matmul(w_query.clone());
     println!("{}", query_2);
@@ -90,13 +90,13 @@ fn main() {
     println!("Attention weights: {}", attn_weights_2);
     println!("Sum: {}", attn_weights_2.clone().sum_dim(1));
 
-    let context_vec_2 = attn_weights_2.matmul(values).squeeze::<1>(0);
+    let context_vec_2 = attn_weights_2.matmul(values).squeeze_dim::<1>(0);
     println!("Context vector: {}", context_vec_2);
 
     // 3.4.2. implementing a compact SelfAttention class
     println!("\n3.4.2. implementing a compact SelfAttention class");
 
-    let model = SelfAttentionV2Config::new().init::<TrainBackend>(DIM_IN, DIM_OUT, false, &device);
+    let model = SelfAttentionV2Config::new().init(DIM_IN, DIM_OUT, false, &device);
     println!("{}", model);
 
     let sa_v2 = model.forward(inputs.clone());
@@ -118,7 +118,7 @@ fn main() {
 
     const CONTEXT_LEN: usize = INPUTS.len();
     let mask_simple =
-        Tensor::<TrainBackend, 2>::tril(Tensor::ones([CONTEXT_LEN, CONTEXT_LEN], &device), 0);
+        Tensor::<2>::tril(Tensor::ones([CONTEXT_LEN, CONTEXT_LEN], &device), 0);
     println!("Mask: {}", mask_simple);
 
     let masked_simple = attn_weights * mask_simple.clone();
@@ -131,7 +131,7 @@ fn main() {
         masked_simple_norm
     );
 
-    let mask = Tensor::<TrainBackend, 2, Bool>::tril_mask([CONTEXT_LEN, CONTEXT_LEN], 0, &device);
+    let mask = Tensor::<2, Bool>::tril_mask([CONTEXT_LEN, CONTEXT_LEN], 0, &device);
     println!("Mask: {}", mask);
     let masked = attn_scores.mask_fill(mask, f64::NEG_INFINITY);
     println!("Masked attention scores: {}", masked);
@@ -153,7 +153,7 @@ fn main() {
     let batch = Tensor::stack::<3>(vec![inputs.clone(), inputs.clone()], 0);
     println!("{}", batch);
 
-    let model = CausalAttentionConfig::new().init::<TrainBackend>(
+    let model = CausalAttentionConfig::new().init(
         DIM_IN,
         DIM_OUT,
         CONTEXT_LEN,
@@ -173,7 +173,7 @@ fn main() {
     println!("3.6.1. stacking multiple single-head attention layers");
 
     let mha = MultiHeadAttentionConfig::new(DIM_IN, DIM_OUT, CONTEXT_LEN, 0.0, 2, false)
-        .init_naive::<TrainBackend>(&device);
+        .init_naive(&device);
     println!("{}", mha);
 
     let context_vecs = mha.forward(batch.clone());
@@ -183,7 +183,7 @@ fn main() {
     println!("\n3.6.2. implementing multi-head attention with weight splits");
 
     let mha = MultiHeadAttentionConfig::new(DIM_IN, DIM_OUT, CONTEXT_LEN, 0.0, 2, false)
-        .init::<TrainBackend>(&device);
+        .init(&device);
     println!("{}", mha);
 
     let context_vecs = mha.forward(batch);

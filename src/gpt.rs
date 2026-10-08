@@ -6,10 +6,9 @@ use burn::module::{Module, Param};
 use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, Linear, LinearConfig};
 use burn::tensor::activation::softmax;
-use burn::tensor::backend::AutodiffBackend;
-use burn::tensor::{Bool, DType, Int, TensorData};
-use burn::tensor::{Tensor, backend::Backend};
-use burn::train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep};
+use burn::tensor::{Bool, DType, Int, TensorData, BoolStore};
+use burn::tensor::{Tensor, Device};
+use burn::train::{ClassificationOutput, TrainOutput, TrainStep, InferenceStep};
 use rand::Rng;
 use rand::distr::weighted::WeightedIndex;
 use safetensors::SafeTensors;
@@ -19,19 +18,21 @@ use crate::dataset::GPTDatasetV1Batch;
 use crate::tokenizer::{self, ITokenizer};
 
 #[derive(Module, Debug)]
-pub struct GPTModel<B: Backend> {
+pub struct GPTModel {
+    #[module(skip)]
     vocab_size: usize,
+    #[module(skip)]
     context_length: usize,
-    tok_emb: Embedding<B>,
-    pos_emb: Embedding<B>,
+    tok_emb: Embedding,
+    pos_emb: Embedding,
     drop_emb: Dropout,
-    trf_blocks: Vec<TransformerBlock<B>>,
-    final_norm: LayerNorm<B>,
-    out_head: Linear<B>,
+    trf_blocks: Vec<TransformerBlock>,
+    final_norm: LayerNorm,
+    out_head: Linear,
 }
 
-impl<B: Backend> GPTModel<B> {
-    pub fn forward(&self, in_idx: Tensor<B, 2, Int>) -> Tensor<B, 3> {
+impl GPTModel {
+    pub fn forward(&self, in_idx: Tensor<2, Int>) -> Tensor<3> {
         let device = in_idx.device();
         let dims = in_idx.dims();
         let (_batch_size, seq_len) = (dims[0], dims[1] as i64);
@@ -52,9 +53,9 @@ impl<B: Backend> GPTModel<B> {
 
     fn forward_train(
         &self,
-        input_ids: Tensor<B, 2, Int>,
-        target_ids: Tensor<B, 2, Int>,
-    ) -> ClassificationOutput<B> {
+        input_ids: Tensor<2, Int>,
+        target_ids: Tensor<2, Int>,
+    ) -> ClassificationOutput {
         let logits = self.forward(input_ids);
         let targets = target_ids;
 
@@ -70,16 +71,21 @@ impl<B: Backend> GPTModel<B> {
     }
 }
 
-impl<B: AutodiffBackend> TrainStep<GPTDatasetV1Batch<B>, ClassificationOutput<B>> for GPTModel<B> {
-    fn step(&self, batch: GPTDatasetV1Batch<B>) -> TrainOutput<ClassificationOutput<B>> {
-        let item = self.forward_train(batch.input_ids, batch.target_ids);
+impl TrainStep for GPTModel {
+    type Input = GPTDatasetV1Batch;
+    type Output = ClassificationOutput;
 
+    fn step(&self, batch: Self::Input) -> TrainOutput<Self::Output> {
+        let item = self.forward_train(batch.input_ids, batch.target_ids);
         TrainOutput::new(self, item.loss.backward(), item)
     }
 }
 
-impl<B: Backend> ValidStep<GPTDatasetV1Batch<B>, ClassificationOutput<B>> for GPTModel<B> {
-    fn step(&self, batch: GPTDatasetV1Batch<B>) -> ClassificationOutput<B> {
+impl InferenceStep for GPTModel {
+    type Input = GPTDatasetV1Batch;
+    type Output = ClassificationOutput;
+
+    fn step(&self, batch: Self::Input) -> Self::Output {
         let start_context = "Every effort moves you";
         let token_ids = generate_text(
             self,
@@ -110,7 +116,7 @@ pub struct GPTModelConfig {
 }
 
 impl GPTModelConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> GPTModel<B> {
+    pub fn init(&self, device: &Device) -> GPTModel {
         GPTModel {
             vocab_size: self.vocab_size,
             context_length: self.context_length,
@@ -136,34 +142,35 @@ impl GPTModelConfig {
         }
     }
 
-    pub fn init_pretrained<B: Backend>(&self, pth_path: &str, device: &B::Device) -> GPTModel<B> {
+    pub fn init_pretrained(&self, pth_path: &str, device: &Device) -> GPTModel {
         let buffer = std::fs::read(pth_path).unwrap();
         let tensors = SafeTensors::deserialize(&buffer).expect("Failed to deserialize tensors");
 
-        fn param_tensor<B: Backend, const D: usize>(
+        fn param_tensor<const D: usize>(
             tensors: &SafeTensors<'_>,
             name: &str,
-            device: &B::Device,
-        ) -> Param<Tensor<B, D>> {
+            device: &Device,
+        ) -> Param<Tensor<D>> {
             let tensor = tensors.tensor(name).unwrap();
             let bytes = tensor.data();
             let shape = tensor.shape();
             let dtype = tensor.dtype();
             let need_transpose = name.ends_with(".weight") && !name.contains("_emb");
 
-            let data = Tensor::<B, D>::from_data(
-                TensorData::from_bytes(
+            let data = Tensor::<D>::from_data(
+                TensorData::try_from_bytes_vec(
                     bytes.to_vec(),
                     shape,
                     match dtype {
-                        safetensors::Dtype::BOOL => DType::Bool,
+                        safetensors::Dtype::BOOL => DType::Bool(BoolStore::Native),
                         safetensors::Dtype::F32 => DType::F32,
                         safetensors::Dtype::F64 => DType::F64,
                         safetensors::Dtype::I32 => DType::I32,
                         safetensors::Dtype::I64 => DType::I64,
                         _ => panic!("Unsupported dtype"),
                     },
-                ),
+                )
+                .expect("Invalid tensor data"),
                 device,
             );
 
@@ -241,7 +248,7 @@ impl GPTModelConfig {
                         )),
                     },
                     dropout: DropoutConfig::new(self.drop_rate).init(),
-                    mask: Tensor::<B, 2, Bool>::tril_mask(
+                    mask: Tensor::<2, Bool>::tril_mask(
                         [self.context_length, self.context_length],
                         0,
                         device,
@@ -320,16 +327,16 @@ impl GPTModelConfig {
 }
 
 #[derive(Module, Debug)]
-pub struct TransformerBlock<B: Backend> {
-    attn: MultiHeadAttention<B>,
-    ff: FeedForward<B>,
-    norm1: LayerNorm<B>,
-    norm2: LayerNorm<B>,
+pub struct TransformerBlock {
+    attn: MultiHeadAttention,
+    ff: FeedForward,
+    norm1: LayerNorm,
+    norm2: LayerNorm,
     dropout_shortcut: Dropout,
 }
 
-impl<B: Backend> TransformerBlock<B> {
-    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
+impl TransformerBlock {
+    pub fn forward(&self, x: Tensor<3>) -> Tensor<3> {
         let shortcut = x.clone();
         let x = self.norm1.forward(x);
         let x = self.attn.forward(x);
@@ -356,7 +363,7 @@ pub struct TransformerBlockConfig {
 }
 
 impl TransformerBlockConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> TransformerBlock<B> {
+    pub fn init(&self, device: &Device) -> TransformerBlock {
         TransformerBlock {
             attn: MultiHeadAttentionConfig::new(
                 self.emb_dim,
@@ -375,11 +382,11 @@ impl TransformerBlockConfig {
     }
 }
 
-#[derive(Module, Clone, Debug)]
+#[derive(Module, Debug)]
 pub struct GELU {}
 
 impl GELU {
-    pub fn forward<B: Backend, const D: usize>(&self, x: Tensor<B, D>) -> Tensor<B, D> {
+    pub fn forward<const D: usize>(&self, x: Tensor<D>) -> Tensor<D> {
         x.clone().mul_scalar(0.5).mul(
             x.clone()
                 .add(x.powf_scalar(3).mul_scalar(0.044715))
@@ -391,14 +398,14 @@ impl GELU {
 }
 
 #[derive(Module, Debug)]
-pub struct FeedForward<B: Backend> {
-    linear1: Linear<B>,
+pub struct FeedForward {
+    linear1: Linear,
     gelu: GELU,
-    linear2: Linear<B>,
+    linear2: Linear,
 }
 
-impl<B: Backend> FeedForward<B> {
-    pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
+impl FeedForward {
+    pub fn forward<const D: usize>(&self, input: Tensor<D>) -> Tensor<D> {
         let x = self.linear1.forward(input);
         let x = self.gelu.forward(x);
         self.linear2.forward(x)
@@ -411,7 +418,7 @@ pub struct FeedForwardConfig {
 }
 
 impl FeedForwardConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> FeedForward<B> {
+    pub fn init(&self, device: &Device) -> FeedForward {
         FeedForward {
             linear1: LinearConfig::new(self.emb_dim, 4 * self.emb_dim).init(device),
             gelu: GELU {},
@@ -421,14 +428,15 @@ impl FeedForwardConfig {
 }
 
 #[derive(Module, Debug)]
-pub struct LayerNorm<B: Backend> {
+pub struct LayerNorm {
+    #[module(skip)]
     eps: f64,
-    scale: Param<Tensor<B, 1>>,
-    shift: Param<Tensor<B, 1>>,
+    scale: Param<Tensor<1>>,
+    shift: Param<Tensor<1>>,
 }
 
-impl<B: Backend> LayerNorm<B> {
-    pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
+impl LayerNorm {
+    pub fn forward<const D: usize>(&self, input: Tensor<D>) -> Tensor<D> {
         let (var, mean) = input.clone().var_mean_bias(D - 1);
         let norm_input = input.sub(mean).div(var.add_scalar(self.eps).sqrt());
         norm_input
@@ -443,7 +451,7 @@ pub struct LayerNormConfig {
 }
 
 impl LayerNormConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> LayerNorm<B> {
+    pub fn init(&self, device: &Device) -> LayerNorm {
         LayerNorm {
             eps: 1e-5,
             scale: Param::from_tensor(Tensor::ones([self.emb_dim], device)),
@@ -452,12 +460,12 @@ impl LayerNormConfig {
     }
 }
 
-pub fn generate_text_simple<B: Backend>(
-    model: &GPTModel<B>,
-    mut idx: Tensor<B, 2, Int>,
+pub fn generate_text_simple(
+    model: &GPTModel,
+    mut idx: Tensor<2, Int>,
     max_new_tokens: usize,
     context_size: usize,
-) -> Tensor<B, 2, Int> {
+) -> Tensor<2, Int> {
     for _ in 0..max_new_tokens {
         let [n_batches, n_tokens] = idx.clone().dims();
         let idx_cond = idx.clone().slice([
@@ -468,7 +476,7 @@ pub fn generate_text_simple<B: Backend>(
         let logits = model.forward(idx_cond);
         let last_logits = logits
             .slice([0..n_batches, n_tokens - 1..n_tokens, 0..model.vocab_size])
-            .squeeze::<2>(1);
+            .squeeze_dim::<2>(1);
 
         let probas = softmax(last_logits, 1);
         let idx_next = probas.argmax(1);
@@ -478,14 +486,14 @@ pub fn generate_text_simple<B: Backend>(
     idx
 }
 
-pub fn generate_text<B: Backend>(
-    model: &GPTModel<B>,
-    mut idx: Tensor<B, 2, Int>,
+pub fn generate_text(
+    model: &GPTModel,
+    mut idx: Tensor<2, Int>,
     max_new_tokens: usize,
     context_size: usize,
     temperature: f64,
     top_k: Option<usize>,
-) -> Tensor<B, 2, Int> {
+) -> Tensor<2, Int> {
     for _ in 0..max_new_tokens {
         let [n_batches, n_tokens] = idx.clone().dims();
         let idx_cond = idx.clone().slice([
@@ -496,7 +504,7 @@ pub fn generate_text<B: Backend>(
         let logits = model.forward(idx_cond);
         let mut last_logits = logits
             .slice([0..n_batches, n_tokens - 1..n_tokens, 0..model.vocab_size])
-            .squeeze::<2>(1);
+            .squeeze_dim::<2>(1);
 
         if let Some(top_k) = top_k {
             let top_k_logits = last_logits.clone().topk(top_k, 1);
@@ -518,21 +526,22 @@ pub fn generate_text<B: Backend>(
                     .clone()
                     .slice([i..i + 1, 0..model.vocab_size])
                     .to_data();
-                let idx = if let Ok(batch_probas) = batch_probas_data.to_vec::<f32>() {
+                let idx = if let Ok(batch_probas) = batch_probas_data.try_to_vec::<f32>() {
                     if let Ok(dist) = WeightedIndex::new(batch_probas) {
                         rng.sample(dist)
                     } else {
                         0
                     }
                 } else {
-                    if let Ok(dist) = WeightedIndex::new(batch_probas_data.to_vec::<f64>().unwrap())
+                    if let Ok(dist) =
+                        WeightedIndex::new(batch_probas_data.try_to_vec::<f64>().unwrap())
                     {
                         rng.sample(dist)
                     } else {
                         0
                     }
                 };
-                next_idxs.push(Tensor::<B, 1, Int>::from([idx]));
+                next_idxs.push(Tensor::<1, Int>::from([idx]));
             }
             Tensor::stack(next_idxs, 0)
         } else {
@@ -545,23 +554,23 @@ pub fn generate_text<B: Backend>(
     idx
 }
 
-pub fn text_to_token_ids<B: Backend>(
+pub fn text_to_token_ids(
     text: &str,
     tokenizer: &tokenizer::BpeTokenizer,
-) -> Tensor<B, 2, Int> {
+) -> Tensor<2, Int> {
     let encoded = tokenizer.encode(text);
-    Tensor::<B, 1, Int>::from(&encoded[..]).unsqueeze()
+    Tensor::<1, Int>::from(&encoded[..]).unsqueeze()
 }
 
-pub fn token_ids_to_text<B: Backend>(
-    token_ids: Tensor<B, 2, Int>,
+pub fn token_ids_to_text(
+    token_ids: Tensor<2, Int>,
     tokenizer: &tokenizer::BpeTokenizer,
 ) -> Result<String> {
-    let out_ids = token_ids.squeeze::<1>(0).to_data();
-    let u32_ids = if let Ok(i32_ids) = out_ids.to_vec::<i32>() {
+    let out_ids = token_ids.squeeze_dim::<1>(0).to_data();
+    let u32_ids = if let Ok(i32_ids) = out_ids.try_to_vec::<i32>() {
         i32_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
     } else {
-        let i64_ids = out_ids.to_vec::<i64>().unwrap();
+        let i64_ids = out_ids.try_to_vec::<i64>().unwrap();
         i64_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
     };
     tokenizer.decode(&u32_ids)

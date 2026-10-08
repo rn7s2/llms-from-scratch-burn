@@ -18,7 +18,7 @@ impl SelfAttentionV2 {
         let inputs = Tensor::<D>::from(input);
         let queries = self.w_query.forward(inputs.clone());
         let keys = self.w_key.forward(inputs.clone());
-        let values = self.w_key.forward(inputs);
+        let values = self.w_value.forward(inputs);
 
         let attn_scores = queries.matmul(keys.clone().transpose());
         let attn_weights = softmax(

@@ -22,4 +22,3 @@ tiktoken-rs = "0.7.0"
 
 [features]
 default = ["burn/wgpu"]
-ndarray = ["burn/ndarray"]

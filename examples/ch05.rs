@@ -8,7 +8,7 @@ use llms_from_scratch_burn::{
     gpt::{
         GPTModelConfig, generate_text, generate_text_simple, text_to_token_ids, token_ids_to_text,
     },
-    tokenizer::{self, ITokenizer},
+    tokenizer::{self, ITokenizer, TOKENIZER},
 };
 
 fn main() {
@@ -137,24 +137,24 @@ fn main() {
     );
 
     // 5.4 Loading model weights using safetensors
-    // println!("\n5.4 Loading model weights using safetensors");
+    println!("\n5.4 Loading model weights using safetensors");
 
-    // let gpt_config_124m = GPTModelConfig::new(50257, 1024, 768, 12, 12, 0.1, true);
-    // let model = gpt_config_124m.init_pretrained("assets/gpt2-small-124M.safetensors", &device);
+    let gpt_config_124m = GPTModelConfig::new(50257, 1024, 768, 12, 12, 0.1, true);
+    let model = gpt_config_124m.init_pretrained("assets/gpt2-small-124M.safetensors", &device);
 
-    // let start_context = "Every effort moves you";
-    // for _ in 0..5 {
-    //     let token_ids = generate_text(
-    //         &model,
-    //         text_to_token_ids(start_context, &TOKENIZER),
-    //         25,
-    //         gpt_config_124m.context_length,
-    //         1.5,
-    //         Some(50),
-    //     );
-    //     println!(
-    //         "Output texts: {:?}",
-    //         token_ids_to_text(token_ids, &TOKENIZER)
-    //     );
-    // }
+    let start_context = "Every effort moves you";
+    for _ in 0..5 {
+        let token_ids = generate_text(
+            &model,
+            text_to_token_ids(start_context, &TOKENIZER),
+            25,
+            gpt_config_124m.context_length,
+            1.5,
+            Some(50),
+        );
+        println!(
+            "Output texts: {:?}",
+            token_ids_to_text(token_ids, &TOKENIZER)
+        );
+    }
 }

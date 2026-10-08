@@ -86,20 +86,6 @@ impl InferenceStep for GPTModel {
     type Output = ClassificationOutput;
 
     fn step(&self, batch: Self::Input) -> Self::Output {
-        let start_context = "Every effort moves you";
-        let token_ids = generate_text(
-            self,
-            text_to_token_ids(start_context, &crate::tokenizer::TOKENIZER),
-            25,
-            self.context_length,
-            1.4,
-            Some(50),
-        );
-        println!(
-            "Output preview: {:?}",
-            token_ids_to_text(token_ids, &crate::tokenizer::TOKENIZER)
-        );
-
         self.forward_train(batch.input_ids, batch.target_ids)
     }
 }
@@ -532,14 +518,14 @@ pub fn generate_text(
                     } else {
                         0
                     }
-                } else {
-                    if let Ok(dist) =
-                        WeightedIndex::new(batch_probas_data.try_to_vec::<f64>().unwrap())
-                    {
+                } else if let Ok(batch_probas) = batch_probas_data.try_to_vec::<f64>() {
+                    if let Ok(dist) = WeightedIndex::new(batch_probas) {
                         rng.sample(dist)
                     } else {
                         0
                     }
+                } else {
+                    0
                 };
                 next_idxs.push(Tensor::<1, Int>::from([idx]));
             }

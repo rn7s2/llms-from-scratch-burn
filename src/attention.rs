@@ -125,6 +125,7 @@ impl CausalAttentionConfig {
 #[derive(Module, Debug)]
 pub struct NaiveMultiHeadAttention {
     heads: Vec<CausalAttention>,
+    out_proj: Linear,
 }
 
 impl NaiveMultiHeadAttention {
@@ -134,7 +135,8 @@ impl NaiveMultiHeadAttention {
             .iter()
             .map(|h| h.forward(input.clone()))
             .collect();
-        Tensor::<D>::cat(outputs, D - 1)
+        let context_vecs = Tensor::<D>::cat(outputs, D - 1);
+        self.out_proj.forward(context_vecs)
     }
 }
 
@@ -229,12 +231,13 @@ impl MultiHeadAttentionConfig {
     }
 
     pub fn init_naive(&self, device: &Device) -> NaiveMultiHeadAttention {
+        let head_dim = self.d_out / self.num_heads;
         NaiveMultiHeadAttention {
             heads: (0..self.num_heads)
                 .map(|_| {
                     CausalAttentionConfig::new().init(
                         self.d_in,
-                        self.d_out,
+                        head_dim,
                         self.context_length,
                         self.dropout,
                         self.qkv_bias,
@@ -242,6 +245,9 @@ impl MultiHeadAttentionConfig {
                     )
                 })
                 .collect(),
+            out_proj: LinearConfig::new(self.d_out, self.d_out)
+                .with_bias(self.qkv_bias)
+                .init(device),
         }
     }
 }

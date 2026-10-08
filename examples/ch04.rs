@@ -3,7 +3,7 @@ use burn::{
     tensor::{Distribution, Int, Tensor},
 };
 use llms_from_scratch_burn::{
-    Backend,
+    Device,
     gpt::{
         FeedForwardConfig, GELU, GPTModelConfig, LayerNormConfig, TransformerBlockConfig,
         generate_text_simple,
@@ -12,14 +12,14 @@ use llms_from_scratch_burn::{
 };
 
 fn main() {
-    let device = &Default::default();
+    let device = Device::default();
 
     // 4.2 normalizing activations with layer normalization
     println!("\n4.2 normalizing activations with layer normalization");
 
-    let batch_example = Tensor::<Backend, 2>::random([2, 5], Distribution::Default, device);
+    let batch_example = Tensor::<2>::random([2, 5], Distribution::Default, &device);
 
-    let ln = LayerNormConfig::new(5).init::<Backend>(device);
+    let ln = LayerNormConfig::new(5).init(&device);
     let x = ln.forward(batch_example.clone());
     println!("Normalized layer outputs:\n{}", x);
 
@@ -29,24 +29,24 @@ fn main() {
     // 4.3 implementing a feed forward network with GELU activations
     println!("\n4.3 implementing a feed forward network with GELU activations");
 
-    let x = Tensor::<Backend, 1>::from_floats(
+    let x = Tensor::<1>::from_floats(
         &(0..=100)
             .map(|x| (x as f64) / (100.0 / 6.0) - 3.0)
             .collect::<Vec<_>>()[..],
-        device,
+        &device,
     );
     println!("Input:\n{}", x);
 
     let gelu = GELU {};
     println!("GELU outputs:\n{}", gelu.forward(x));
 
-    let x = Tensor::<Backend, 3>::random([2, 3, 768], Distribution::Default, device);
-    let ff = FeedForwardConfig::new(768).init::<Backend>(device);
+    let x = Tensor::<3>::random([2, 3, 768], Distribution::Default, &device);
+    let ff = FeedForwardConfig::new(768).init(&device);
     println!("Feed Forward outputs:\n{}", ff.forward(x));
 
     // 4.5 connecting attention and linear layers in a transformer block
-    let x = Tensor::<Backend, 3>::random([2, 4, 768], Distribution::Default, device);
-    let block = TransformerBlockConfig::new(1024, 768, 12, 0.1, false).init::<Backend>(device);
+    let x = Tensor::<3>::random([2, 4, 768], Distribution::Default, &device);
+    let block = TransformerBlockConfig::new(1024, 768, 12, 0.1, false).init(&device);
     println!("Transformer Block outputs:\n{}", block.forward(x));
 
     // 4.6 coding the GPT model
@@ -57,14 +57,14 @@ fn main() {
     let mut batch = vec![];
     let txt1 = "Every effort moves you";
     let txt2 = "Every day holds a";
-    batch.push(Tensor::<Backend, 1, Int>::from(&tokenizer.encode(txt1)[..]));
-    batch.push(Tensor::<Backend, 1, Int>::from(&tokenizer.encode(txt2)[..]));
+    batch.push(Tensor::<1, Int>::from(&tokenizer.encode(txt1)[..]));
+    batch.push(Tensor::<1, Int>::from(&tokenizer.encode(txt2)[..]));
 
     let batch = Tensor::stack::<2>(batch, 0);
     println!("{}", batch);
 
     let gpt_config_124m = GPTModelConfig::new(50257, 1024, 768, 12, 12, 0.1, false);
-    let model = gpt_config_124m.init::<Backend>(device);
+    let model = gpt_config_124m.init(&device);
 
     let logits = model.forward(batch);
     println!("{}", logits);
@@ -77,17 +77,17 @@ fn main() {
     let start_context = "Hello, I am";
 
     let encoded = tokenizer.encode(start_context);
-    let encoded_tensor = Tensor::<Backend, 1, Int>::from(&encoded[..]).unsqueeze::<2>();
+    let encoded_tensor = Tensor::<1, Int>::from(&encoded[..]).unsqueeze::<2>();
     println!("encoded_tensor: {}", encoded_tensor);
 
     let out = generate_text_simple(&model, encoded_tensor, 6, gpt_config_124m.context_length);
     println!("Output: {}", out);
 
-    let out_ids = out.squeeze::<1>(0).to_data();
-    let u32_ids = if let Ok(i32_ids) = out_ids.to_vec::<i32>() {
+    let out_ids = out.squeeze_dim::<1>(0).to_data();
+    let u32_ids = if let Ok(i32_ids) = out_ids.try_to_vec::<i32>() {
         i32_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
     } else {
-        let i64_ids = out_ids.to_vec::<i64>().unwrap();
+        let i64_ids = out_ids.try_to_vec::<i64>().unwrap();
         i64_ids.iter().map(|id| *id as u32).collect::<Vec<_>>()
     };
     let decoded_text = tokenizer.decode(&u32_ids).unwrap();

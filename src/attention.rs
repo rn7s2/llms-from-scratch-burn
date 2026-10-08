@@ -4,25 +4,25 @@ use burn::nn::{Dropout, DropoutConfig, Linear, LinearConfig};
 use burn::tensor::Bool;
 use burn::tensor::activation::softmax;
 use burn::tensor::cast::ToElement;
-use burn::tensor::{Tensor, backend::Backend};
+use burn::tensor::{Tensor, Device};
 
 #[derive(Module, Debug)]
-pub struct SelfAttentionV2<B: Backend> {
-    pub w_query: Linear<B>,
-    pub w_key: Linear<B>,
-    pub w_value: Linear<B>,
+pub struct SelfAttentionV2 {
+    pub w_query: Linear,
+    pub w_key: Linear,
+    pub w_value: Linear,
 }
 
-impl<B: Backend> SelfAttentionV2<B> {
-    pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
-        let inputs = Tensor::<B, D>::from(input);
+impl SelfAttentionV2 {
+    pub fn forward<const D: usize>(&self, input: Tensor<D>) -> Tensor<D> {
+        let inputs = Tensor::<D>::from(input);
         let queries = self.w_query.forward(inputs.clone());
         let keys = self.w_key.forward(inputs.clone());
         let values = self.w_key.forward(inputs);
 
         let attn_scores = queries.matmul(keys.clone().transpose());
         let attn_weights = softmax(
-            attn_scores.div_scalar(keys.shape().dims[D - 1].to_f64().sqrt()),
+            attn_scores.div_scalar(keys.dims()[D - 1].to_f64().sqrt()),
             D - 1,
         );
 
@@ -34,13 +34,13 @@ impl<B: Backend> SelfAttentionV2<B> {
 pub struct SelfAttentionV2Config {}
 
 impl SelfAttentionV2Config {
-    pub fn init<B: Backend>(
+    pub fn init(
         &self,
         d_in: usize,
         d_out: usize,
         qkv_bias: bool,
-        device: &B::Device,
-    ) -> SelfAttentionV2<B> {
+        device: &Device,
+    ) -> SelfAttentionV2 {
         SelfAttentionV2 {
             w_query: LinearConfig::new(d_in, d_out)
                 .with_bias(qkv_bias)
@@ -56,20 +56,22 @@ impl SelfAttentionV2Config {
 }
 
 #[derive(Module, Debug)]
-pub struct CausalAttention<B: Backend> {
+pub struct CausalAttention {
+    #[module(skip)]
     d_out: usize,
-    w_query: Linear<B>,
-    w_key: Linear<B>,
-    w_value: Linear<B>,
+    w_query: Linear,
+    w_key: Linear,
+    w_value: Linear,
     dropout: Dropout,
-    mask: Tensor<B, 2, Bool>,
+    mask: Tensor<2, Bool>,
 }
 
-impl<B: Backend> CausalAttention<B> {
-    pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
-        let [_b, num_tokens, _d_in] = input.shape().dims();
+impl CausalAttention {
+    pub fn forward<const D: usize>(&self, input: Tensor<D>) -> Tensor<D> {
+        let dims = input.dims();
+        let num_tokens = dims[D - 2];
 
-        let inputs = Tensor::<B, D>::from(input);
+        let inputs = Tensor::<D>::from(input);
         let queries = self.w_query.forward(inputs.clone());
         let keys = self.w_key.forward(inputs.clone());
         let values = self.w_value.forward(inputs);
@@ -94,15 +96,15 @@ impl<B: Backend> CausalAttention<B> {
 pub struct CausalAttentionConfig {}
 
 impl CausalAttentionConfig {
-    pub fn init<B: Backend>(
+    pub fn init(
         &self,
         d_in: usize,
         d_out: usize,
         context_length: usize,
         dropout: f64,
         qkv_bias: bool,
-        device: &B::Device,
-    ) -> CausalAttention<B> {
+        device: &Device,
+    ) -> CausalAttention {
         CausalAttention {
             d_out,
             w_query: LinearConfig::new(d_in, d_out)
@@ -115,45 +117,48 @@ impl CausalAttentionConfig {
                 .with_bias(qkv_bias)
                 .init(device),
             dropout: DropoutConfig::new(dropout).init(),
-            mask: Tensor::<B, 2, Bool>::tril_mask([context_length, context_length], 0, device),
+            mask: Tensor::<2, Bool>::tril_mask([context_length, context_length], 0, device),
         }
     }
 }
 
 #[derive(Module, Debug)]
-pub struct NaiveMultiHeadAttention<B: Backend> {
-    heads: Vec<CausalAttention<B>>,
+pub struct NaiveMultiHeadAttention {
+    heads: Vec<CausalAttention>,
 }
 
-impl<B: Backend> NaiveMultiHeadAttention<B> {
-    pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
+impl NaiveMultiHeadAttention {
+    pub fn forward<const D: usize>(&self, input: Tensor<D>) -> Tensor<D> {
         let outputs = self
             .heads
             .iter()
             .map(|h| h.forward(input.clone()))
             .collect();
-        Tensor::<B, D>::cat(outputs, D - 1)
+        Tensor::<D>::cat(outputs, D - 1)
     }
 }
 
 #[derive(Module, Debug)]
-pub struct MultiHeadAttention<B: Backend> {
+pub struct MultiHeadAttention {
+    #[module(skip)]
     pub d_out: usize,
+    #[module(skip)]
     pub num_heads: usize,
+    #[module(skip)]
     pub head_dim: usize,
-    pub w_query: Linear<B>,
-    pub w_key: Linear<B>,
-    pub w_value: Linear<B>,
-    pub out_proj: Linear<B>,
+    pub w_query: Linear,
+    pub w_key: Linear,
+    pub w_value: Linear,
+    pub out_proj: Linear,
     pub dropout: Dropout,
-    pub mask: Tensor<B, 2, Bool>,
+    pub mask: Tensor<2, Bool>,
 }
 
-impl<B: Backend> MultiHeadAttention<B> {
-    pub fn forward(&self, input: Tensor<B, 3>) -> Tensor<B, 3> {
-        let [b, num_tokens, _d_in] = input.shape().dims();
+impl MultiHeadAttention {
+    pub fn forward(&self, input: Tensor<3>) -> Tensor<3> {
+        let [b, num_tokens, _d_in] = input.dims();
 
-        let inputs = Tensor::<B, 3>::from(input);
+        let inputs = Tensor::<3>::from(input);
         let queries = self.w_query.forward(inputs.clone());
         let keys = self.w_key.forward(inputs.clone());
         let values = self.w_value.forward(inputs);
@@ -197,7 +202,7 @@ pub struct MultiHeadAttentionConfig {
 }
 
 impl MultiHeadAttentionConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> MultiHeadAttention<B> {
+    pub fn init(&self, device: &Device) -> MultiHeadAttention {
         MultiHeadAttention {
             d_out: self.d_out,
             num_heads: self.num_heads,
@@ -215,7 +220,7 @@ impl MultiHeadAttentionConfig {
                 .with_bias(self.qkv_bias)
                 .init(device),
             dropout: DropoutConfig::new(self.dropout).init(),
-            mask: Tensor::<B, 2, Bool>::tril_mask(
+            mask: Tensor::<2, Bool>::tril_mask(
                 [self.context_length, self.context_length],
                 0,
                 device,
@@ -223,7 +228,7 @@ impl MultiHeadAttentionConfig {
         }
     }
 
-    pub fn init_naive<B: Backend>(&self, device: &B::Device) -> NaiveMultiHeadAttention<B> {
+    pub fn init_naive(&self, device: &Device) -> NaiveMultiHeadAttention {
         NaiveMultiHeadAttention {
             heads: (0..self.num_heads)
                 .map(|_| {

@@ -59,8 +59,8 @@ impl<const M: usize> Dataset<GPTDatasetV1Item<M>> for GPTDatasetV1<M> {
         self.input_ids.len()
     }
 
-    fn get(&self, index: usize) -> Option<GPTDatasetV1Item<M>> {
-        Some((self.input_ids[index], self.target_ids[index]))
+    fn get(&self, index: usize) -> Result<GPTDatasetV1Item<M>, burn::data::dataset::DatasetError> {
+        Ok((self.input_ids[index], self.target_ids[index]))
     }
 }
 
@@ -68,22 +68,22 @@ impl<const M: usize> Dataset<GPTDatasetV1Item<M>> for GPTDatasetV1<M> {
 pub struct GPTDatasetV1Batcher {}
 
 #[derive(Clone, Debug)]
-pub struct GPTDatasetV1Batch<B: Backend> {
-    pub input_ids: Tensor<B, 2, Int>,
-    pub target_ids: Tensor<B, 2, Int>,
+pub struct GPTDatasetV1Batch {
+    pub input_ids: Tensor<2, Int>,
+    pub target_ids: Tensor<2, Int>,
 }
 
-impl<B: Backend, const M: usize> Batcher<B, GPTDatasetV1Item<M>, GPTDatasetV1Batch<B>>
+impl<const M: usize> Batcher<GPTDatasetV1Item<M>, GPTDatasetV1Batch>
     for GPTDatasetV1Batcher
 {
-    fn batch(&self, items: Vec<GPTDatasetV1Item<M>>, device: &B::Device) -> GPTDatasetV1Batch<B> {
+    fn batch(&self, items: Vec<GPTDatasetV1Item<M>>, device: &Device) -> GPTDatasetV1Batch {
         let input_chunks = items
             .iter()
-            .map(|item| Tensor::<B, 1, Int>::from_ints(item.0, device))
+            .map(|item| Tensor::<1, Int>::from_ints(item.0, device))
             .collect::<Vec<_>>();
         let target_chunks = items
             .iter()
-            .map(|item| Tensor::<B, 1, Int>::from_ints(item.1, device))
+            .map(|item| Tensor::<1, Int>::from_ints(item.1, device))
             .collect::<Vec<_>>();
 
         let input_ids = Tensor::stack(input_chunks, 0);

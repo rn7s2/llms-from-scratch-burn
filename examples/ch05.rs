@@ -4,7 +4,7 @@ use burn::{
     tensor::{Int, Tensor, activation::softmax},
 };
 use llms_from_scratch_burn::{
-    Backend, TrainBackend, TrainingConfig,
+    Device, TrainingConfig,
     gpt::{
         GPTModelConfig, generate_text, generate_text_simple, text_to_token_ids, token_ids_to_text,
     },
@@ -12,7 +12,7 @@ use llms_from_scratch_burn::{
 };
 
 fn main() {
-    let device = Default::default();
+    let device = Device::default();
 
     // 5.1 Evaluating generative text models
     println!("5.1 Evaluating generative text models");
@@ -21,7 +21,7 @@ fn main() {
     println!("5.1.1 Using GPT to generate text");
 
     let gpt_config_124m = GPTModelConfig::new(50257, 1024, 768, 12, 12, 0.1, false);
-    let model = gpt_config_124m.init::<TrainBackend>(&device);
+    let model = gpt_config_124m.init(&device.clone().autodiff());
 
     let tokenizer = tokenizer::BpeTokenizer::new();
     let start_context = "Every effort moves you";
@@ -39,11 +39,11 @@ fn main() {
     // 5.1.2 Calculating the text generation loss: cross-entropy and perplexity
     println!("\n5.1.2 Calculating the text generation loss: cross-entropy and perplexity");
 
-    let inputs = Tensor::<TrainBackend, 2, Int>::from([
+    let inputs = Tensor::<2, Int>::from([
         [16833, 3626, 6100], // ["every effort moves",
         [40, 1107, 588],     //  "I really like"]
     ]);
-    let targets = Tensor::<TrainBackend, 2, Int>::from([
+    let targets = Tensor::<2, Int>::from([
         [3626, 6100, 345],  // [" effort moves you",
         [1107, 588, 11311], //  " really like chocolate"]
     ]);
@@ -61,19 +61,19 @@ fn main() {
     );
     println!(
         "Outputs batch 1: {:?}",
-        token_ids_to_text(token_ids.slice([0..1]).squeeze(2), &tokenizer)
+        token_ids_to_text(token_ids.slice([0..1]).squeeze_dim::<2>(2), &tokenizer)
     );
 
     let target_probas = probas
         .gather(2, targets.clone().unsqueeze_dim(2))
-        .squeeze::<2>(2);
+        .squeeze_dim::<2>(2);
     println!("Target probabilities:\n{}", target_probas);
 
     let log_probas = target_probas.flatten::<1>(0, 1).log();
     println!("Log probabilities:\n{}", log_probas);
 
     let avg_log_probas = log_probas.mean();
-    println!("Average log probability: {}", avg_log_probas.into_scalar());
+    println!("Average log probability: {}", avg_log_probas.into_scalar::<f64>());
 
     // Logits have shape (batch_size, num_tokens, vocab_size)
     println!("Logits shape: {:?}", logits.dims());
@@ -90,7 +90,7 @@ fn main() {
     let cross_entropy_loss = CrossEntropyLossConfig::new().init(&device);
     let loss = cross_entropy_loss
         .forward(logits_flat, targets_flat)
-        .into_scalar();
+        .into_scalar::<f64>();
     println!("Loss: {}", loss);
     println!("Perplexity: {}", loss.exp());
 
@@ -107,7 +107,7 @@ fn main() {
     println!("Tokens: {}", total_tokens);
 
     let optimizer = AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(0.1)));
-    let model = llms_from_scratch_burn::train::<TrainBackend>(
+    let model = llms_from_scratch_burn::train(
         &text,
         "artifacts",
         TrainingConfig::new(
@@ -138,7 +138,7 @@ fn main() {
 
     let gpt_config_124m = GPTModelConfig::new(50257, 1024, 768, 12, 12, 0.1, true);
     let model =
-        gpt_config_124m.init_pretrained::<Backend>("assets/gpt2-small-124M.safetensors", &device);
+        gpt_config_124m.init_pretrained("assets/gpt2-small-124M.safetensors", &device);
 
     let start_context = "Every effort moves you";
     for _ in 0..5 {

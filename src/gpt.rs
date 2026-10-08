@@ -6,9 +6,9 @@ use burn::module::{Module, Param};
 use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, Linear, LinearConfig};
 use burn::tensor::activation::softmax;
-use burn::tensor::{Bool, DType, Int, TensorData, BoolStore};
-use burn::tensor::{Tensor, Device};
-use burn::train::{ClassificationOutput, TrainOutput, TrainStep, InferenceStep};
+use burn::tensor::{Bool, BoolStore, DType, Int, TensorData};
+use burn::tensor::{Device, Tensor};
+use burn::train::{ClassificationOutput, InferenceStep, TrainOutput, TrainStep};
 use rand::Rng;
 use rand::distr::weighted::WeightedIndex;
 use safetensors::SafeTensors;
@@ -540,10 +540,7 @@ pub fn generate_text(
     idx
 }
 
-pub fn text_to_token_ids(
-    text: &str,
-    tokenizer: &tokenizer::BpeTokenizer,
-) -> Tensor<2, Int> {
+pub fn text_to_token_ids(text: &str, tokenizer: &tokenizer::BpeTokenizer) -> Tensor<2, Int> {
     let encoded = tokenizer.encode(text);
     Tensor::<1, Int>::from(&encoded[..]).unsqueeze()
 }

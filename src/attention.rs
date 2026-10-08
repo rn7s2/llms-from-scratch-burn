@@ -4,7 +4,7 @@ use burn::nn::{Dropout, DropoutConfig, Linear, LinearConfig};
 use burn::tensor::Bool;
 use burn::tensor::activation::softmax;
 use burn::tensor::cast::ToElement;
-use burn::tensor::{Tensor, Device};
+use burn::tensor::{Device, Tensor};
 
 #[derive(Module, Debug)]
 pub struct SelfAttentionV2 {

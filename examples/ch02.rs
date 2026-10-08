@@ -58,13 +58,11 @@ fn main() {
     println!();
 
     // 2.8. Encoding word positions
-    let token_embedding_layer: Embedding =
-        EmbeddingConfig::new(VOCAB_SIZE, OUT_DIM).init(&device);
+    let token_embedding_layer: Embedding = EmbeddingConfig::new(VOCAB_SIZE, OUT_DIM).init(&device);
     let token_embeddings = token_embedding_layer.forward(batch.input_ids);
     println!("token embeddings: {}", token_embeddings.clone());
 
-    let pos_embedding_layer: Embedding =
-        EmbeddingConfig::new(MAX_LENGTH, OUT_DIM).init(&device);
+    let pos_embedding_layer: Embedding = EmbeddingConfig::new(MAX_LENGTH, OUT_DIM).init(&device);
     let pos_embeddings =
         pos_embedding_layer.forward(Tensor::arange(0..MAX_LENGTH as i64, &device).unsqueeze());
     println!("pos embeddings: {}", pos_embeddings.clone());

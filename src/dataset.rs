@@ -73,9 +73,7 @@ pub struct GPTDatasetV1Batch {
     pub target_ids: Tensor<2, Int>,
 }
 
-impl<const M: usize> Batcher<GPTDatasetV1Item<M>, GPTDatasetV1Batch>
-    for GPTDatasetV1Batcher
-{
+impl<const M: usize> Batcher<GPTDatasetV1Item<M>, GPTDatasetV1Batch> for GPTDatasetV1Batcher {
     fn batch(&self, items: Vec<GPTDatasetV1Item<M>>, device: &Device) -> GPTDatasetV1Batch {
         let input_chunks = items
             .iter()
